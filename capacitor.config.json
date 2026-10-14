@@ -1,0 +1,8 @@
+{
+  "appId": "com.zhijian.reader",
+  "appName": "纸间",
+  "webDir": "dist",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "force"
+  }
+}

@@ -1,0 +1,132 @@
+/**
+ * 纸间 · 应用入口与路由
+ * 页面切换采用交叉淡化过渡；tab 栏常驻不重建
+ */
+import './app.css';
+import { icon, applyInkMode } from './ui/kit.js';
+import { loadSettings } from './store/stats.js';
+import { isSyncEnabled, syncNow } from './store/sync.js';
+import { renderLibrary } from './ui/library.js';
+import { renderSearch } from './ui/search.js';
+import { renderProfile } from './ui/profile.js';
+import { renderReader, unmountReader } from './ui/reader.js';
+
+export const app = {
+	state: {
+		route: 'library',
+		settings: loadSettings(),
+		reader: null, // { book, chapterIdx, scrollTop, pageIdx }
+		_shellReady: false,
+		_switching: false
+	},
+
+	go(route, params = {}) {
+		if (route === 'reader') {
+			this.state.route = 'reader';
+			this.state.reader = params;
+			renderReader(document.getElementById('app'), this);
+			return;
+		}
+		const fromReader = this.state.route === 'reader';
+		if (fromReader) {
+			unmountReader();
+		}
+		if (this.state.route === route && this.state._shellReady && !fromReader) return;
+
+		this.state.route = route;
+		this.render({ animate: true, fromReader });
+	},
+
+	/** 重渲当前页（无过渡，用于数据刷新） */
+	refresh() {
+		this.render({ animate: false });
+	},
+
+	/** 骨架（只建一次） */
+	buildShell(root) {
+		root.innerHTML = `
+			<div class="app-shell">
+				<div class="page page-enter" id="page-container"></div>
+				<nav class="tabbar" id="tabbar">
+					<div class="tabbar-inner">
+						<button class="tab-item" data-route="library">${icon('library', 24)}<span>书架</span></button>
+						<button class="tab-item" data-route="search">${icon('search', 24)}<span>书海</span></button>
+						<button class="tab-item" data-route="profile">${icon('user', 24)}<span>我的</span></button>
+					</div>
+				</nav>
+			</div>`;
+		root.querySelectorAll('.tab-item').forEach((btn) => {
+			btn.addEventListener('click', () => {
+				if (this.state.route !== btn.dataset.route) this.go(btn.dataset.route);
+			});
+		});
+		this.state._shellReady = true;
+	},
+
+	updateTabs(root) {
+		root.querySelectorAll('.tab-item').forEach((btn) => {
+			btn.classList.toggle('active', btn.dataset.route === this.state.route);
+		});
+	},
+
+	async renderPage(root) {
+		const container = root.querySelector('#page-container');
+		if (!container) return;
+		const route = this.state.route;
+		container.innerHTML = '';
+		container.classList.remove('page-enter');
+		container.classList.add('page-enter');
+		if (route === 'library') await renderLibrary(container, this);
+		else if (route === 'search') await renderSearch(container, this);
+		else if (route === 'profile') await renderProfile(container, this);
+	},
+
+	render({ animate = false, fromReader = false } = {}) {
+		const root = document.getElementById('app');
+		if (!this.state._shellReady || !root.querySelector('.app-shell')) {
+			this.buildShell(root);
+			this.updateTabs(root);
+			this.renderPage(root);
+			return;
+		}
+
+		this.updateTabs(root);
+
+		// 从阅读器返回：页面已在背后，只需淡入
+		if (fromReader) {
+			const container = root.querySelector('#page-container');
+			container.classList.remove('page-enter');
+			container.classList.add('page-enter');
+			this.renderPage(root);
+			return;
+		}
+
+		if (!animate) {
+			this.renderPage(root);
+			return;
+		}
+
+		// 交叉淡化：旧页淡出 → 换内容 → 新页淡入
+		if (this.state._switching) return;
+		this.state._switching = true;
+		const container = root.querySelector('#page-container');
+		container.classList.add('page-leave');
+		setTimeout(() => {
+			container.classList.remove('page-leave');
+			this.renderPage(root);
+			this.state._switching = false;
+		}, 160);
+	}
+};
+
+// 启动
+const bootSettings = loadSettings();
+applyInkMode(bootSettings.inkMode);
+app.render();
+
+// 跨设备同步：已开启时启动即静默拉取一次（尽早，保证打开书前进度已是最新）
+if (isSyncEnabled()) {
+	setTimeout(() => {
+		syncNow().catch(() => { /* 静默：离线或 token 失效时用户可在设置中查看 */ });
+	}, 300);
+}

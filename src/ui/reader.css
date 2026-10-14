@@ -1,0 +1,517 @@
+/* ============================================================
+   阅读器 —— 纸页之上，只剩文字
+   ============================================================ */
+
+.reader {
+	position: fixed;
+	inset: 0;
+	z-index: 200;
+	background: var(--rd-bg, #fbf7ef);
+	color: var(--rd-ink, #2e2b27);
+	display: flex;
+	flex-direction: column;
+	transition: background 0.4s var(--ease), color 0.4s var(--ease);
+}
+
+/* ---------- 纸张主题（含纸墨护眼） ---------- */
+.reader[data-theme='paper'] { --rd-bg: #fbf7ef; --rd-ink: #2e2b27; --rd-ink-2: #8a8279; --rd-line: rgba(46, 43, 39, 0.1); --rd-bar: rgba(251, 247, 239, 0.88); }
+.reader[data-theme='sepia'] { --rd-bg: #f3ead6; --rd-ink: #56462e; --rd-ink-2: #9c8a6c; --rd-line: rgba(86, 70, 46, 0.14); --rd-bar: rgba(243, 234, 214, 0.88); }
+.reader[data-theme='ink'] { --rd-bg: #f1f0ea; --rd-refresh-bg: #e3e1da; --rd-ink: #1e1d19; --rd-ink-2: #57554e; --rd-line: rgba(30, 29, 25, 0.18); --rd-bar: #eeede7; }
+.reader[data-theme='night'] { --rd-bg: #121315; --rd-ink: #a8a8ac; --rd-ink-2: #5c5d61; --rd-line: rgba(255, 255, 255, 0.08); --rd-bar: rgba(18, 19, 21, 0.88); }
+.reader[data-theme='green'] { --rd-bg: #dfe9dd; --rd-ink: #2f3d33; --rd-ink-2: #728372; --rd-line: rgba(47, 61, 51, 0.12); --rd-bar: rgba(223, 233, 221, 0.88); }
+
+/* 墨水主题：墨迹微渗——笔画略厚、边缘柔化（LCD 的锐利边缘是反 E-ink 的） */
+.reader[data-theme='ink'] .reader-article,
+.reader[data-theme='ink'] .pv-content {
+	text-shadow: 0 0 0.28px currentColor;
+	letter-spacing: 0.025em;
+	-webkit-font-smoothing: auto;
+}
+/* 墨水主题：工具栏去掉玻璃感 */
+.reader[data-theme='ink'] .reader-top,
+.reader[data-theme='ink'] .reader-bottom { backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* ---------- 顶栏 ---------- */
+.reader-top {
+	position: absolute;
+	top: 0; left: 0; right: 0;
+	z-index: 10;
+	padding: calc(var(--sat) + 12px) 14px 10px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	background: var(--rd-bar);
+	backdrop-filter: blur(20px) saturate(160%);
+	-webkit-backdrop-filter: blur(20px) saturate(160%);
+	border-bottom: 0.5px solid var(--rd-line);
+	transform: translateY(0);
+	transition: transform 0.35s var(--ease);
+}
+.reader-top.hidden { transform: translateY(-110%); }
+
+.reader-btn {
+	width: 38px; height: 38px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	color: var(--rd-ink);
+	transition: background 0.2s;
+	flex-shrink: 0;
+}
+.reader-btn:active { background: var(--rd-line); }
+.reader-top-title {
+	flex: 1;
+	text-align: center;
+	font-size: 14.5px;
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	opacity: 0.9;
+}
+.reader[data-theme='ink'] .reader-btn:active,
+.reader[data-theme='ink'] .reader-tool:active { background: rgba(55, 54, 47, 0.08); }
+
+/* ---------- 底栏 ---------- */
+.reader-bottom {
+	position: absolute;
+	bottom: 0; left: 0; right: 0;
+	z-index: 10;
+	padding: 12px 18px calc(10px + var(--sab));
+	background: var(--rd-bar);
+	backdrop-filter: blur(20px) saturate(160%);
+	-webkit-backdrop-filter: blur(20px) saturate(160%);
+	border-top: 0.5px solid var(--rd-line);
+	transform: translateY(0);
+	transition: transform 0.35s var(--ease);
+}
+.reader-bottom.hidden { transform: translateY(110%); }
+
+.reader-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-around;
+	gap: 4px;
+	max-width: 560px;
+	margin: 0 auto;
+}
+.reader-tool {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 3px;
+	font-size: 10px;
+	color: var(--rd-ink);
+	opacity: 0.82;
+	padding: 6px 14px;
+	border-radius: 10px;
+	transition: opacity 0.2s, background 0.2s;
+	min-width: 60px;
+}
+.reader-tool:active { opacity: 1; background: var(--rd-line); }
+.reader-tool svg { width: 21px; height: 21px; }
+
+.reader-progress-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 10px;
+	padding: 0 8px;
+	font-size: 11.5px;
+	color: var(--rd-ink-2);
+}
+/* 左右标签等宽 → 进度条始终居中（消除视觉偏移感） */
+.reader-progress-row > span:first-child {
+	min-width: 96px;
+	text-align: left;
+}
+.reader-progress-row > span:last-child {
+	min-width: 96px;
+	text-align: right;
+}
+.reader-progress-row .progress-track {
+	flex: 1;
+	height: 3px;
+	background: var(--rd-line);
+}
+.reader-progress-row .progress-fill { background: var(--rd-ink); opacity: 0.7; }
+
+/* ---------- 正文 ---------- */
+.reader-body {
+	flex: 1;
+	overflow-y: auto;
+	overflow-x: hidden;
+	-webkit-overflow-scrolling: touch;
+	position: relative;
+	z-index: 1;
+}
+.reader-body::-webkit-scrollbar { display: none; }
+
+.reader-article {
+	position: relative;
+	max-width: 700px;
+	margin: 0 auto;
+	padding: 84px 26px 140px;
+	font-family: var(--rd-font);
+	font-size: var(--rd-fontsize, 18px);
+	line-height: var(--rd-lineheight, 1.9);
+	letter-spacing: 0.02em;
+	text-align: justify;
+	user-select: text;
+	-webkit-user-select: text;
+}
+
+.reader-article .chapter-block { scroll-margin-top: 80px; }
+
+.reader-article .chapter-title {
+	font-size: calc(var(--rd-fontsize, 18px) * 1.32);
+	font-weight: 700;
+	line-height: 1.5;
+	margin: 2.2em 0 1.4em;
+	text-align: left;
+	letter-spacing: 0.01em;
+	font-family: var(--rd-font-title);
+}
+
+.reader-article .chapter-block:first-child .chapter-title { margin-top: 0.4em; }
+
+.reader-article p {
+	margin: 0 0 calc(var(--rd-pgap, 0.9em));
+	text-indent: 2em;
+	word-break: break-word;
+	overflow-wrap: anywhere; /* 影响 min-content，防止超长串撑宽内容 */
+}
+
+/* 阅读中的细微阴影氛围（Kindle 的纸感） */
+.reader-article {
+	text-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.35);
+}
+.reader[data-theme='night'] .reader-article { text-shadow: none; }
+
+/* 章节间隔装饰 */
+.chapter-sep {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 12px;
+	margin: 3.2em 0 2.4em;
+	color: var(--rd-ink-2);
+	opacity: 0.65;
+}
+.chapter-sep::before,
+.chapter-sep::after {
+	content: '';
+	width: 36px;
+	height: 0.5px;
+	background: var(--rd-line);
+}
+.chapter-sep span { font-size: 12px; letter-spacing: 0.4em; padding-left: 0.4em; }
+
+/* 章末 / 加载状态 */
+.chapter-loading {
+	text-align: center;
+	padding: 28px 0;
+	color: var(--rd-ink-2);
+	font-size: 13px;
+	letter-spacing: 0.1em;
+}
+.chapter-loading .dot-pulse { display: inline-flex; gap: 5px; }
+.chapter-loading .dot-pulse i {
+	width: 5px; height: 5px; border-radius: 50%;
+	background: var(--rd-ink-2);
+	animation: dotPulse 1.2s infinite ease-in-out;
+}
+.chapter-loading .dot-pulse i:nth-child(2) { animation-delay: 0.15s; }
+.chapter-loading .dot-pulse i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dotPulse {
+	0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+	40% { transform: scale(1); opacity: 1; }
+}
+
+.chapter-retry {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 9px 18px;
+	border-radius: 100px;
+	border: 1px solid var(--rd-line);
+	color: var(--rd-ink);
+	font-size: 13.5px;
+	margin: 4px auto;
+}
+
+/* ---------- 中央点击区提示 ---------- */
+.reader-tap-zone { position: absolute; inset: 0; z-index: 5; }
+
+/* ---------- 目录面板 ---------- */
+.toc-sheet { max-height: 74vh; }
+.toc-list { margin: 0 -20px; }
+.toc-item {
+	display: flex;
+	align-items: center;
+	padding: 13px 20px;
+	font-size: 15px;
+	gap: 12px;
+	border-radius: 0;
+	width: 100%;
+	text-align: left;
+	color: var(--ink);
+	transition: background 0.15s;
+}
+.toc-item:active { background: var(--elev-2); }
+.toc-item.current { color: var(--accent); font-weight: 650; }
+.toc-item .toc-idx {
+	font-size: 12px;
+	color: var(--ink-3);
+	min-width: 44px;
+	font-variant-numeric: tabular-nums;
+	flex-shrink: 0;
+}
+.toc-item .toc-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toc-item.cached .toc-name::after {
+	content: '已缓存';
+	font-size: 10px;
+	color: var(--ink-3);
+	background: var(--elev-2);
+	padding: 2px 6px;
+	border-radius: 6px;
+	margin-left: 8px;
+	vertical-align: 1px;
+}
+
+/* 分类跳转工具栏 */
+.toc-jump {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+.toc-jump input {
+	flex: 1;
+	background: var(--elev-2);
+	border-radius: 10px;
+	padding: 9px 14px;
+	font-size: 14px;
+}
+
+/* ---------- 字号/主题调节面板 ---------- */
+.font-panel { display: flex; flex-direction: column; gap: 18px; }
+.font-row { display: flex; align-items: center; gap: 14px; }
+.font-row .fr-label { font-size: 13.5px; color: var(--ink-2); min-width: 40px; }
+.font-row input[type='range'] { flex: 1; }
+.font-size-btns { display: flex; gap: 10px; }
+.font-size-btns button {
+	width: 52px; height: 52px;
+	border-radius: 14px;
+	background: var(--elev-2);
+	font-size: 20px;
+	font-weight: 600;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.font-size-btns button:active { transform: scale(0.94); }
+
+.theme-row { display: flex; gap: 8px; justify-content: space-around; }
+.theme-dot {
+	width: 56px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 7px;
+	font-size: 11.5px;
+	color: var(--ink-2);
+}
+.theme-dot .dot {
+	width: 44px; height: 44px;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-family: var(--font-reading);
+	font-size: 16px;
+	border: 2px solid transparent;
+	transition: border-color 0.2s, transform 0.15s;
+}
+.theme-dot:active .dot { transform: scale(0.94); }
+.theme-dot.active .dot { border-color: var(--ink); }
+.theme-dot .dot[data-t='paper'] { background: #fbf7ef; color: #2e2b27; }
+.theme-dot .dot[data-t='sepia'] { background: #f3ead6; color: #56462e; }
+.theme-dot .dot[data-t='ink'] { background: #f1f0ea; color: #1e1d19; }
+.theme-dot .dot[data-t='green'] { background: #dfe9dd; color: #2f3d33; }
+.theme-dot .dot[data-t='night'] { background: #121315; color: #a8a8ac; }
+
+/* ============================================================
+   分页模式（Kindle 式翻页）—— 多列排版
+   ============================================================ */
+.reader-body.paged { overflow: hidden; position: relative; }
+
+/* ============================================================
+   Kindle 式前光 —— 色温模拟（2700K 琥珀 ↔ 6500K 冷白）
+   真实 Paperwhite 用 17-25 颗双色温 LED 实现 2700K-6500K 前光；
+   LCD 上用 2700K 琥珀光色（#ffb26e）的 multiply 层近似：
+   底层纸面越白暖化越明显，暗部随之偏暖，且不改变系统亮度。
+   档位（对应 Kindle 暖光滑杆的大致位置）：
+     low ≈ 4500K（微暖奶白）· mid ≈ 3500K（夜间常用）· high ≈ 2700K（深琥珀）
+   ============================================================ */
+.reader-frontlight {
+	display: none;
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	pointer-events: none;
+	background: #ffb26e;            /* ≈2700K 琥珀（黑体辐射近似色） */
+	mix-blend-mode: multiply;
+	opacity: 0;
+	transition: opacity 0.6s var(--ease);
+}
+.reader[data-theme='ink'].front-light-low .reader-frontlight { display: block; opacity: 0.1; }
+.reader[data-theme='ink'].front-light-mid .reader-frontlight { display: block; opacity: 0.16; }
+.reader[data-theme='ink'].front-light-high .reader-frontlight { display: block; opacity: 0.24; }
+
+/* 纸面微颗粒：比整屏噪点更轻，避免滚动时产生明显闪烁。 */
+.reader[data-theme='ink'].paper-grain-on .reader-body::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	pointer-events: none;
+	opacity: 0.16;
+	mix-blend-mode: multiply;
+	background-image:
+		radial-gradient(circle at 1px 1px, rgba(55, 54, 48, 0.18) 0 0.55px, transparent 0.7px),
+		radial-gradient(circle at 3px 3px, rgba(255, 255, 255, 0.22) 0 0.5px, transparent 0.65px);
+	background-size: 6px 6px, 9px 9px;
+}
+/* 内容层置于前光/颗粒覆盖层（z-index: 2）之下。
+   注意：只设 z-index，不能覆盖 position——.pv-viewport 必须保持
+   absolute 定位（它靠绝对定位获得与屏幕等高的视口；一旦被改成
+   relative 会失去固定高度，列高随内容膨胀 →「每章只有两页」）。
+   （.reader-article 自身已是 relative；.pv-viewport 自身是 absolute） */
+.reader-body > .pv-viewport,
+.reader-body > .reader-article { z-index: 1; }
+
+.pv-viewport {
+	position: absolute;
+	inset: 0;
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+	overscroll-behavior: contain;
+	touch-action: pan-x;
+}
+.pv-viewport::-webkit-scrollbar { display: none; }
+
+.pv-content {
+	box-sizing: border-box;
+	width: 100%;
+	column-fill: auto;
+	font-family: var(--rd-font);
+	font-size: var(--rd-fontsize, 18px);
+	line-height: var(--rd-lineheight, 1.9);
+	letter-spacing: 0.02em;
+	text-align: justify;
+	user-select: text;
+	-webkit-user-select: text;
+}
+
+/* 纸墨护眼模式避免两端对齐把中文字符间距拉得过松。 */
+.reader[data-theme='ink'] .reader-article,
+.reader[data-theme='ink'] .pv-content {
+	text-align: left;
+}
+.pv-content .chapter-title {
+	font-size: calc(var(--rd-fontsize, 18px) * 1.34);
+	font-weight: 700;
+	line-height: 1.5;
+	margin: 0 0 1.3em;
+	letter-spacing: 0.01em;
+	font-family: var(--rd-font-title);
+	break-after: avoid;
+}
+.pv-content p {
+	margin: 0 0 calc(var(--rd-pgap, 0.9em));
+	text-indent: 2em;
+	word-break: break-word;
+	overflow-wrap: anywhere; /* 关键：降低 min-content → 列宽不被超长串撑开（分页错位修复） */
+}
+.bookmark-row { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.bookmark-jump { min-width: 0; flex: 1; display: grid; gap: 5px; text-align: left; }
+.bookmark-jump strong { font-size: 14px; }
+.bookmark-jump span { font-size: 12px; color: var(--ink-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* 分页内容防撑宽兜底：所有直接子元素都可任意断行 */
+.pv-content > * { overflow-wrap: anywhere; }
+
+/* 滚动宽度占位：把视口可滚动宽度精确补足到 N×W（修复末页偏右）。
+   无视觉、不参与交互，仅用于抵消 Chromium 对多列末列右侧 padding 的忽略 */
+.pv-tail {
+	display: block;
+	height: 0;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+/* ============================================================
+   阅读器进出场与章节过渡
+   ============================================================ */
+.reader.entering { animation: readerIn 0.5s var(--ease-out) both; }
+@keyframes readerIn {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+.reader.entering .reader-body { animation: contentIn 0.6s var(--ease-out) both; }
+@keyframes contentIn {
+	from { opacity: 0; transform: translateY(12px); }
+	to { opacity: 1; transform: none; }
+}
+.reader.leaving {
+	opacity: 0 !important;
+	transition: opacity 0.22s var(--ease);
+}
+
+/* 滚动模式：新章节淡入上浮 */
+.chapter-enter { animation: chapterIn 0.55s var(--ease-out) both; }
+@keyframes chapterIn {
+	from { opacity: 0; transform: translateY(16px); }
+	to { opacity: 1; transform: none; }
+}
+
+/* 分页模式：章节切换时内容轻微呼吸 */
+.pv-content { transition: opacity 0.25s var(--ease); }
+
+/* 平板/宽屏：阅读排版更从容 */
+@media (min-width: 900px) {
+	.reader-article { max-width: 780px; padding: 92px 40px 160px; }
+	.reader-article .chapter-title { font-size: calc(var(--rd-fontsize, 18px) * 1.4); }
+	.reader-tool { padding: 8px 22px; }
+}
+
+/* ============================================================
+   淡化翻页 —— 复刻 Kindle 局部刷新：
+   前一页字迹渐渐淡去 → 新一页徐徐显现
+   ============================================================ */
+.reader-veil {
+	position: absolute;
+	inset: 0;
+	z-index: 45;
+	background: var(--rd-bg);
+	opacity: 0;
+	pointer-events: none;
+	will-change: opacity;
+}
+
+/* 墨水主题下淡化更"浓"一点（E-ink 刷新感更明显） */
+.reader[data-theme='ink'] .reader-veil { opacity: 0; }
+.reader[data-theme='ink'] .reader-veil.global-refresh { background: var(--rd-refresh-bg); }
+
+@media (max-width: 380px) {
+	.reader-progress-row { gap: 6px; padding: 0; font-size: 10px; }
+	.reader-progress-row > span:first-child,
+	.reader-progress-row > span:last-child { min-width: 70px; }
+	.reader-bottom { padding-left: 10px; padding-right: 10px; }
+	.reader-tool { min-width: 54px; padding-left: 8px; padding-right: 8px; }
+}

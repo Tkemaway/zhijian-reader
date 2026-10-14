@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#FAF8F5</color>
+    <color name="colorPrimaryDark">#F6F4EF</color>
+    <color name="colorAccent">#8A6F4D</color>
+    <!-- edge-to-edge 下系统栏区域露出的窗口底色（与 App 纸白底一致） -->
+    <color name="windowBackground">#F6F4EF</color>
+</resources>

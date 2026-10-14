@@ -1,0 +1,30 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+android/app/build/
+android/build/
+android/.gradle/
+.gradle/
+android/capacitor-cordova-android-plugins/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+
+# 打包/签名产物
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+
+# 本地诊断与历史文件
+_diag/
+_apk_history/
+_dev.log
+.workbuddy-ai/
+*.7z
+
+# 系统文件
+.DS_Store
+Thumbs.db

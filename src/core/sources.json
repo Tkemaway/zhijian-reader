@@ -1,0 +1,430 @@
+[
+ {
+  "id": "fanqie",
+  "name": "🍅番茄小说",
+  "type": "fanqie-app",
+  "url": "https://fanqienovel.com",
+  "enabled": true,
+  "comment": "APP 协议源：直连官方接口（搜索/目录/全本正文），签名与解密在本地完成"
+ },
+ {
+  "id": "sn-1",
+  "name": "梦书中文",
+  "type": "sonovel",
+  "url": "http://www.mcxs.la/",
+  "enabled": true,
+  "rule": {
+   "url": "http://www.mcxs.la/",
+   "name": "梦书中文",
+   "comment": "搜索有限流(Connect timed out)",
+   "search": {
+    "url": "http://www.mcxs.la/search.html",
+    "method": "post",
+    "data": "{name: %s}",
+    "result": ".novelslist2 > ul > li",
+    "bookName": "span.s2.wid > a",
+    "author": "span.s4.wid > a",
+    "latestChapter": "span.s3.wid3 > a",
+    "lastUpdateTime": "span.s6.wid6"
+   },
+   "book": {
+    "coverUrl": "meta[property=\"og:image\"]@js:r='http://www.mcxs.la'+r"
+   },
+   "toc": {
+    "item": "dl > dt:nth-of-type(2) ~ dd > a"
+   },
+   "chapter": {
+    "title": ".bookname > h1",
+    "content": "#content",
+    "paragraphTagClosed": false,
+    "paragraphTag": "<br>+",
+    "filterTxt": "天才一秒记住本站地址：[.+] .+最快更新！无广告！|(.+)，高速全文字在线阅读！|一秒记住【.+】，精彩无弹窗免费阅读！|《.+》.+全文字更新，牢记网址：([a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)*\\.[a-zA-Z]{2,})|\\(本章完\\)",
+    "filterTag": "div, p, script"
+   }
+  }
+ },
+ {
+  "id": "sn-2",
+  "name": "鸟书网",
+  "type": "sonovel",
+  "url": "http://www.99wx.info/",
+  "enabled": true,
+  "rule": {
+   "url": "http://www.99wx.info/",
+   "name": "鸟书网",
+   "comment": "搜索有限流 (Read timed out)，数量15w+",
+   "search": {
+    "url": "http://www.99wx.info/read/search/",
+    "method": "post",
+    "data": "{searchkey: %s}",
+    "result": "div.wrap > div > div > div",
+    "bookName": "div.bookinfo > h4 > a",
+    "author": "div.bookinfo > div.author",
+    "latestChapter": "div.bookinfo > div.update > a"
+   },
+   "book": {},
+   "toc": {
+    "item": "dl > dt:nth-of-type(2) ~ dd > a"
+   },
+   "chapter": {
+    "title": ".content > h1",
+    "content": "#content",
+    "paragraphTagClosed": false,
+    "paragraphTag": "<br>+",
+    "filterTxt": "请记住本书首发域名：.+。鸟书网手机版阅读网址：.+|7017k|\\(本章完\\)",
+    "filterTag": ""
+   }
+  }
+ },
+ {
+  "id": "sn-3",
+  "name": "笔尖中文",
+  "type": "sonovel",
+  "url": "http://www.xbiquwk.com/",
+  "enabled": true,
+  "rule": {
+   "url": "http://www.xbiquwk.com/",
+   "name": "笔尖中文",
+   "comment": "",
+   "search": {
+    "url": "http://www.xbiquwk.com/modules/article/search.php",
+    "method": "post",
+    "data": "{searchkey: %s}",
+    "result": "#wrapper > table > tbody > tr",
+    "bookName": "td:nth-child(1) > a",
+    "author": "td:nth-child(3)",
+    "latestChapter": "td:nth-child(2)",
+    "lastUpdateTime": "td:nth-child(5)"
+   },
+   "book": {
+    "url": "http://www.xbiquwk.com/(.*?)/"
+   },
+   "toc": {
+    "baseUri": "http://www.xbiquwk.com/%s/",
+    "item": "#list > dl > dd > a"
+   },
+   "chapter": {
+    "title": ".bookname > h1",
+    "content": "#content",
+    "paragraphTagClosed": false,
+    "paragraphTag": "<br>+",
+    "filterTxt": "<!--.*?-->|喜欢.+请大家收藏：.+|\\(本章完\\)",
+    "filterTag": ""
+   }
+  }
+ },
+ {
+  "id": "sn-4",
+  "name": "悠久小说网",
+  "type": "sonovel",
+  "url": "http://www.ujxsw.org/",
+  "enabled": true,
+  "rule": {
+   "url": "http://www.ujxsw.org/",
+   "name": "悠久小说网",
+   "comment": "下载速度快",
+   "search": {
+    "url": "http://www.ujxsw.org/searchbooks.php",
+    "method": "post",
+    "data": "{searchkey: %s}",
+    "result": "#main > div.shuku_list > div.shulist > ul",
+    "bookName": "li.three > a",
+    "author": "li.four > a",
+    "category": "li.two",
+    "status": "li.six",
+    "latestChapter": "li.three > span > a",
+    "lastUpdateTime": "li.five"
+   },
+   "book": {
+    "url": "http://www.ujxsw.org/book/(.*?)/",
+    "bookName": "#maininfo > div.coverecom.w_770.left > div.tabstit > a:nth-child(4)",
+    "author": "#bookinfo > div.bookright > div.d_title > h1 > em > a",
+    "intro": "#bookintro",
+    "category": "#count > span:nth-child(1)",
+    "coverUrl": "#bookimg > a > img",
+    "latestChapter": "#bookinfo > div.bookright > div.new > span.new_t > a",
+    "latestChapterUrl": "#bookinfo > div.bookright > div.new > span.new_t > a@href",
+    "lastUpdateTime": "#bookinfo > div.bookright > div.new > span.new_p"
+   },
+   "toc": {
+    "url": "http://www.ujxsw.org/read/%s/",
+    "item": "#readerlist > ul > li > a"
+   },
+   "chapter": {
+    "title": "#mlfy_main_text > h3",
+    "content": "#mlfy_main_text > div.read-content > p",
+    "paragraphTagClosed": false,
+    "paragraphTag": "<br>+",
+    "filterTxt": "【悠久小説網ωωω.ＵＪХＳw.ｎｅｔ】，免费小说无弹窗免费阅读！|佰度搜索 【悠久小說網 ＷＷＷ.ＵＪХＳw．ＮＥＴ】 全集TXT电子书免费下载！|《.*》悠久小说网全文字更新,牢记网址:www.ujxsw.org|1秒记住网：",
+    "filterTag": ""
+   }
+  }
+ },
+ {
+  "id": "sn-5",
+  "name": "笔趣阁365",
+  "type": "sonovel",
+  "url": "https://www.biquge365.net/",
+  "enabled": true,
+  "rule": {
+   "url": "https://www.biquge365.net/",
+   "name": "笔趣阁365",
+   "comment": "搜索间隔15秒，若搜索结果为空则手动打开网页搜一次后再试",
+   "search": {
+    "url": "https://www.biquge365.net/s.php",
+    "method": "post",
+    "data": "{type: articlename, s: %s}",
+    "result": "body > div.menu > div > ul > li",
+    "bookName": "span.name > a",
+    "author": "span.zuo > a",
+    "category": "span.lei > a",
+    "latestChapter": "span.jie > a",
+    "lastUpdateTime": "span.time"
+   },
+   "book": {
+    "url": "https://www.biquge365.net/book/(.*?)/",
+    "latestChapterUrl": "body > div.menu > div.right > div:nth-child(1) > div > div.xinxi > span:nth-child(8) > a@href",
+    "lastUpdateTime": "body > div.menu > div.right > div:nth-child(1) > div > div.xinxi > span:nth-child(7)"
+   },
+   "toc": {
+    "url": "https://www.biquge365.net/newbook/%s/",
+    "item": "body > div.menu > div.border > ul > li > a"
+   },
+   "chapter": {
+    "title": "#neirong > h1",
+    "content": "#txt",
+    "paragraphTagClosed": false,
+    "paragraphTag": "<br>+",
+    "filterTxt": "",
+    "filterTag": "p"
+   }
+  }
+ },
+ {
+  "id": "ld-6",
+  "name": "速读谷",
+  "type": "legado",
+  "url": "https://www.sudugu.cc",
+  "enabled": true,
+  "searchUrl": "/modules/article/search.php,{'method':'post','body':'searchkey={{key}}&action=login&searchtype=all&submit='}",
+  "ruleSearch": {
+   "author": "class.author.0@text##作者：",
+   "bookList": "class.bookbox",
+   "bookUrl": "tag.a.0@href",
+   "coverUrl": "tag.a.0@href@js:\nlet id = result.match(/\\d+/)[0], id_='0';\nif (id.length>3) {\nid_ = id.slice(0,-3)\n}\nbook.origin+'/files/article/image/'+id_+'/'+id+'/'+id+'s.jpg'",
+   "intro": "class.update.0@textNodes",
+   "kind": "",
+   "lastChapter": "class.cat.0@tag.a.0@text",
+   "name": "tag.a.0@text"
+  },
+  "ruleBookInfo": {
+   "author": "class.itemtxt.0@tag.p.1@tag.a.0@text##作者：",
+   "coverUrl": "tag.img.0@src",
+   "intro": "class.des.0@html",
+   "kind": "class.itemtxt.0@tag.p.0@tag.span@text",
+   "lastChapter": "class.itemtxt.0@tag.li.0@tag.a.0@text",
+   "name": "tag.img.0@alt",
+   "tocUrl": "",
+   "wordCount": "class.itemtxt.0@tag.script.0@text@js:\nlet num = result.textContent.match(/\\d+/)[0]\nlet wan=Math.round(parseInt(num)/10000);\nwan+'万字'"
+  },
+  "ruleToc": {
+   "chapterList": "id.list.0@tag.a",
+   "chapterName": "text",
+   "chapterUrl": "href",
+   "nextTocUrl": "@css:#pages .gr:not([href='#'])@href"
+  },
+  "ruleContent": {
+   "content": "class.con.0@html",
+   "nextContentUrl": "//div[@class='prenext']/span/a[text()='下一页']/@href",
+   "replaceRegex": "##[\\(（]本章完[\\)）]$"
+  }
+ },
+ {
+  "id": "ld-7",
+  "name": "得奇小说网",
+  "type": "legado",
+  "url": "https://www.deqixs.com",
+  "enabled": false,
+  "searchUrl": "/search.html,{'method':'post','body':'s={{key}}'}",
+  "ruleSearch": {
+   "author": "tag.p.1@tag.a.0@text##作者：",
+   "bookList": "class.item",
+   "bookUrl": "tag.a.0@href",
+   "checkKeyWord": "小书生",
+   "coverUrl": "tag.img.0@src",
+   "intro": "",
+   "kind": "tag.p.0@tag.span[0:1]@text",
+   "lastChapter": "tag.li.0@tag.a.0@text",
+   "name": "tag.h3.0@tag.a.0@text",
+   "wordCount": ""
+  },
+  "ruleBookInfo": {
+   "author": "class.itemtxt.0@tag.p.1@tag.a.0@text",
+   "coverUrl": "class.item.0@tag.img.0@src",
+   "downloadUrls": "class.op.0@tag.a.-1@href",
+   "intro": "class.des.0@tag.p.0@text",
+   "kind": "class.itemtxt.0@tag.p.0@tag.span[0:1]@text",
+   "lastChapter": "class.itemtxt.0@tag.li.0@tag.a.0@text",
+   "name": "class.itemtxt.0@tag.h1.0@tag.a.0@text",
+   "wordCount": "class.itemtxt.0@tag.h1.0@tag.i.0@text"
+  },
+  "ruleToc": {
+   "chapterList": "id.list.0@tag.a",
+   "chapterName": "text",
+   "chapterUrl": "href",
+   "nextTocUrl": "id.pages.0@class.gr.0@href"
+  },
+  "ruleContent": {
+   "content": "class.con.0@tag.p@text",
+   "nextContentUrl": "class.prenext.0@tag.span.-1@text.下一页.0@href",
+   "replaceRegex": ""
+  }
+ },
+ {
+  "id": "ld-8",
+  "name": "天天看小说",
+  "type": "legado",
+  "url": "https://cn.ttkan.co",
+  "enabled": false,
+  "searchUrl": "/novel/search?q={{key}}",
+  "ruleSearch": {
+   "author": "tag.li.1@text",
+   "bookList": "class.novel_cell",
+   "bookUrl": "tag.a.0@href",
+   "checkKeyWord": "我的师兄",
+   "coverUrl": "tag.amp-img.0@src",
+   "intro": "tag.li.2@text",
+   "name": "tag.h3.0@text"
+  },
+  "ruleBookInfo": {
+   "author": "//meta[@name='og:novel:author']/@content",
+   "coverUrl": "//meta[@name='og:image']/@content",
+   "intro": "//meta[@name='og:description']/@content",
+   "kind": "//meta[@name='og:novel:category' or @name='og:novel:status' or @name='og:novel:update_time']/@content",
+   "lastChapter": "//meta[@name='og:novel:latest_chapter_name']/@content",
+   "name": "//meta[@name='og:novel:book_name']/@content"
+  },
+  "ruleToc": {
+   "chapterList": "class.full_chapters@children[0]@tag.a",
+   "chapterName": "text",
+   "chapterUrl": "href"
+  },
+  "ruleContent": {
+   "content": "class.content@tag.p@text",
+   "replaceRegex": "##\\n.*\\(本章完\\)$"
+  }
+ },
+ {
+  "id": "ld-9",
+  "name": "手机小说",
+  "type": "legado",
+  "url": "https://www.shoujix.com",
+  "enabled": false,
+  "searchUrl": "/modules/article/search.php,{'charset':'gbk','body':'searchkey={{key}}','method':'POST'}",
+  "ruleSearch": {
+   "author": "class.novel-author.0@text",
+   "bookList": "class.novel-item",
+   "bookUrl": "tag.a.0@href",
+   "coverUrl": "tag.img.0@src",
+   "intro": "class.novel-intro.0@text",
+   "kind": "",
+   "lastChapter": "",
+   "name": "tag.img.0@alt",
+   "wordCount": ""
+  },
+  "ruleBookInfo": {
+   "author": "//meta[@property='og:novel:author']/@content",
+   "coverUrl": "//meta[@property='og:image']/@content",
+   "downloadUrls": "id.shojixsinto.0@tag.a.0@src",
+   "intro": "//meta[@property='og:description']/@content",
+   "kind": "//meta[@property='og:novel:category' or @property='og:novel:status' or @property='og:novel:update_time']/@content",
+   "lastChapter": "//meta[@property='og:novel:latest_chapter_name']/@content",
+   "name": "//meta[@property='og:novel:book_name']/@content"
+  },
+  "ruleToc": {
+   "chapterList": "//div[@id=\"lbks\"]/dl/dt[last()]/following-sibling::dd/a",
+   "chapterName": "text",
+   "chapterUrl": "href",
+   "nextTocUrl": "class.right.0@tag.a.0@href"
+  },
+  "ruleContent": {
+   "content": "id.zjny.0@html",
+   "imageStyle": "0"
+  },
+  "header": "{'cookie': 'PHPSESSID=3820hfq2ikc8khtti2k9p3mqg0; jieqiUserInfo=jieqiUserId%3D21925%2CjieqiUserName%3Dsjxs233%2CjieqiUserGroup%3D3%2CjieqiUserName_un%3Dsjxs233%2CjieqiUserLogin%3D1753191757; jieqiVisitInfo=jieqiUserLogin%3D1753191757%2CjieqiUserId%3D21925; jieqiVisitTime=jieqiArticlesearchTime%3D1753191769'}"
+ },
+ {
+  "id": "ld-10",
+  "name": "阅友小说",
+  "type": "legado",
+  "url": "http://m.suixkan.com",
+  "enabled": true,
+  "searchUrl": "/s/1.html?keyword={{key}}&page={{page}}",
+  "ruleSearch": {
+   "author": ".v-author@text##\\s",
+   "bookList": ".v-list-item",
+   "bookUrl": "@onclick@js:result.match(/\\('(.*?)', '', ''\\)/)[1]",
+   "coverUrl": "img@src",
+   "intro": ".v-intro@text",
+   "kind": ".base-label@text",
+   "name": ".v-title@text",
+   "wordCount": ".v-words@text"
+  },
+  "ruleBookInfo": {
+   "author": ".face-info span.0@text##.*：",
+   "coverUrl": ".face-cover img@src",
+   "intro": "#intro@html",
+   "kind": ".face-info span.1:3@text&&#idNewIds@#chapter-ps-id@text##.*：",
+   "lastChapter": "#idNewIds@.chapter-entrance@text",
+   "name": ".face-info-title@text",
+   "tocUrl": ".sumchapter a@href",
+   "wordCount": ".face-info span.2@text##.*："
+  },
+  "ruleToc": {
+   "chapterList": ".catalog_ls li a",
+   "chapterName": "text",
+   "chapterUrl": "href"
+  },
+  "ruleContent": {
+   "content": ".con@html",
+   "replaceRegex": "##[\\(（]本章未完.*[）\\)]|[\\(（]本章完[）\\)]"
+  }
+ },
+ {
+  "id": "ld-11",
+  "name": "就爱文学",
+  "type": "legado",
+  "url": "http://www.92xs.info",
+  "enabled": true,
+  "searchUrl": "/modules/article/search.php,{'method':'post','body':'searchtype=articlename&searchkey={{key}}'}",
+  "ruleSearch": {
+   "author": ".odd.1@text",
+   "bookList": "#author@tbody@tr!0",
+   "bookUrl": "a.0@href##.com/##.la/",
+   "coverUrl": "a.0@href##.*/(\\d+)(\\d+)(\\d+)(\\d+).*##/files/article/image/$1/$1$2$3$4/$1$2$3$4s.jpg",
+   "kind": ".even.2@text&&.odd.2@text",
+   "lastChapter": ".even.0@text",
+   "name": ".odd.0@text",
+   "wordCount": ".even.1@text"
+  },
+  "ruleBookInfo": {
+   "author": ".p_author@text",
+   "coverUrl": "#bookimg img@src",
+   "downloadUrls": "#button_all a.1@href",
+   "intro": "#bookintro p.-1@html##【展开】.*",
+   "kind": "#count span.0:3@text&&#keywords@text##.*：|小说|\\s.*",
+   "lastChapter": "#newlist a.1@text",
+   "name": ".d_title h1@text",
+   "tocUrl": ".newrap a.0@href",
+   "wordCount": "#count span.2@text"
+  },
+  "ruleToc": {
+   "chapterList": ".ccss",
+   "chapterName": "a@text",
+   "chapterUrl": "a@href"
+  },
+  "ruleContent": {
+   "content": "#ccontent@textNodes"
+  }
+ }
+]
