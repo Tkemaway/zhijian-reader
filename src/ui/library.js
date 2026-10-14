@@ -1,7 +1,7 @@
 /**
  * 书架页 —— 继续阅读 + 书籍网格 + 今日阅读状态
  */
-import { getBooks, getProgress, deleteBook, getDownload, addBook, saveToc, saveChapters } from '../store/db.js';
+import { getBooks, getProgress, deleteBook, getDownload, addBook, updateBook, saveToc, saveChapters } from '../store/db.js';
 import { downloadBook, pauseDownload, isDownloading } from '../store/downloads.js';
 import { refreshBookToc } from '../store/toc-refresh.js';
 import { getLimitStateWithExtra, fmtDuration, getTodaySeconds } from '../store/stats.js';
@@ -45,18 +45,29 @@ export async function renderLibrary(container, app) {
 	} catch (e) {
 		console.error(e);
 	}
-	books.sort((a, b) => (b.lastReadAt || b.addedAt || 0) - (a.lastReadAt || a.addedAt || 0));
+
+	// 按「书名+作者」分组：同一本书的不同书源各是一条独立记录
+	//（目录/章节缓存/进度/书签各自独立），但书架每组只显示一张卡片
+	//（当前书源）——其余来源可在长按面板里切换，避免不同源的章节混读
+	const groups = new Map();
+	for (const b of books) {
+		const k = groupKeyOf(b);
+		if (!groups.has(k)) groups.set(k, []);
+		groups.get(k).push(b);
+	}
+	const cards = [...groups.values()].map(pickActiveVariant);
+	cards.sort((a, b) => (b.lastReadAt || b.addedAt || 0) - (a.lastReadAt || a.addedAt || 0));
 
 	// 继续阅读
 	const contZone = container.querySelector('#continue-zone');
-	const recent = books.find((b) => b.lastReadAt);
+	const recent = cards.find((b) => b.lastReadAt);
 	if (recent) {
 		renderContinue(contZone, recent, app);
 	}
 
 	// 网格
 	const zone = container.querySelector('#books-zone');
-	if (!books.length) {
+	if (!cards.length) {
 		zone.innerHTML = `
 			<div class="empty-state">
 				<div class="glyph">纸</div>
@@ -68,8 +79,8 @@ export async function renderLibrary(container, app) {
 
 	const grid = document.createElement('div');
 	grid.className = 'book-grid';
-	books.forEach((book, i) => {
-		const card = bookCard(book, app);
+	cards.forEach((book, i) => {
+		const card = bookCard(book, app, groups.get(groupKeyOf(book)));
 		// 逐项优雅进场（封顶延迟，避免长列表等待）
 		card.classList.add('stagger-item');
 		card.style.animationDelay = `${Math.min(i, 11) * 36}ms`;
@@ -135,23 +146,109 @@ function renderContinue(zone, book, app) {
 	});
 }
 
-/** 书籍卡片 */
-function bookCard(book, app) {
+/** 同书分组键（书名+作者）：不同书源的同一本书归为一组，书架只显示一张卡片 */
+function groupKeyOf(book) {
+	return `${(book.title || '').trim()}\u0001${(book.author || '').trim()}`;
+}
+
+/** 组内当前书源：用户显式切过的（active）优先，其次本机已缓存（离线可读）的，
+ *  再其次最近阅读，最后最近入架 */
+function pickActiveVariant(variants) {
+	return [...variants].sort((a, b) =>
+		(Number(b.activeAt) || 0) - (Number(a.activeAt) || 0) ||
+		(b.active ? 1 : 0) - (a.active ? 1 : 0) ||
+		(b.cachedChapters || 0) - (a.cachedChapters || 0) ||
+		(b.lastReadAt || 0) - (a.lastReadAt || 0) ||
+		(b.addedAt || 0) - (a.addedAt || 0))[0];
+}
+
+/** 切换本书的阅读书源（目录/缓存/进度按源独立，互不影响） */
+async function setActiveVariant(target, variants) {
+	const now = Date.now();
+	await updateBook(target.id, { active: 1, activeAt: now });
+	target.active = 1;
+	target.activeAt = now;
+	for (const v of variants) {
+		if (v.id === target.id) continue;
+		if (v.active) updateBook(v.id, { active: 0 }).catch(() => {});
+		v.active = 0;
+	}
+}
+
+/** 书源切换面板：同一本书的多个来源供用户选择 */
+function showSourceSwitcher(current, variants, app, closeParent) {
+	const ordered = [...variants].sort((a, b) =>
+		(b.active ? 1 : 0) - (a.active ? 1 : 0) || (b.lastReadAt || 0) - (a.lastReadAt || 0));
+	showSheet({
+		title: '切换书源',
+		build: (body, close) => {
+			const hint = document.createElement('p');
+			hint.className = 'setting-hint';
+			hint.style.marginBottom = '12px';
+			hint.textContent = '同一本书可能来自不同书源，章节划分与更新各有不同；可自行选择阅读哪个来源，各自的进度互不影响。';
+			body.appendChild(hint);
+			for (const v of ordered) {
+				const isCur = v.id === current.id;
+				const bits = [`${v.totalChapters || 0} 章`];
+				if (v.cachedChapters) bits.push(`已缓存 ${v.cachedChapters} 章`);
+				if (v.lastReadAt) bits.push('有阅读进度');
+				const row = document.createElement('button');
+				row.className = 'btn btn-soft btn-block';
+				row.style.textAlign = 'left';
+				row.style.marginTop = '8px';
+				row.innerHTML = `
+					<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+						<div style="min-width:0">
+							<div style="font-weight:600">${escapeHtml(v.sourceName || '未知来源')}${isCur ? ' · 当前' : ''}</div>
+							<div class="setting-hint" style="margin:3px 0 0">${escapeHtml(bits.join(' · '))}</div>
+						</div>
+						${isCur ? icon('check', 18) : ''}
+					</div>`;
+				row.disabled = isCur;
+				if (!isCur) {
+					row.onclick = async () => {
+						row.disabled = true;
+						try {
+							await setActiveVariant(v, variants);
+							close();
+							closeParent?.();
+							app.refresh();
+							toast(`已切换到「${v.sourceName || '未知来源'}」`);
+						} catch {
+							toast('切换失败，请重试');
+							row.disabled = false;
+						}
+					};
+				}
+				body.appendChild(row);
+			}
+		}
+	});
+}
+
+/** 书籍卡片（variants：同书名同作者的全部书源；多个时显示角标并标注当前源） */
+function bookCard(book, app, variants = null) {
 	const el = document.createElement('div');
 	el.className = 'book-card';
+	const multi = !!(variants && variants.length > 1);
 	const pct = book.totalChapters ? Math.min(100, Math.round(((book.readChapters || 0) / book.totalChapters) * 100)) : 0;
+	const subParts = [];
+	if ((multi || !book.totalChapters) && book.sourceName) subParts.push(escapeHtml(book.sourceName));
+	if (book.totalChapters) subParts.push(`${book.totalChapters} 章 · ${pct}%`);
+	else if (!subParts.length) subParts.push(escapeHtml(book.sourceName || ''));
 	el.innerHTML = `
 		<div class="bc-cover" style="background:${book.coverStyle || 'linear-gradient(145deg,#3a3a3c,#1c1c1e)'}">
 			<span class="bc-title">${escapeHtml(book.title)}</span>
 			<span class="bc-author">${escapeHtml(book.author || '')}</span>
+			${multi ? `<span class="bc-badge">${variants.length} 个源</span>` : ''}
 		</div>
 		<div class="bc-meta">
 			<div class="bc-name">${escapeHtml(book.title)}</div>
-			<div class="bc-sub">${book.totalChapters ? `${book.totalChapters} 章 · ${pct}%` : book.sourceName || ''}</div>
+			<div class="bc-sub">${subParts.join(' · ')}</div>
 		</div>`;
 
 	let longPress = null;
-	const openActions = () => showBookActions(book, app);
+	const openActions = () => showBookActions(book, app, variants);
 	el.addEventListener('click', async () => {
 		if (el.__suppressClick) { el.__suppressClick = false; return; }
 		const progress = await getProgress(book.id);
@@ -169,7 +266,7 @@ function bookCard(book, app) {
 	return el;
 }
 
-function showBookActions(book, app) {
+function showBookActions(book, app, variants = null) {
 	showSheet({
 		title: book.title,
 		build: (body, close) => {
@@ -180,6 +277,16 @@ function showBookActions(book, app) {
 				<div class="setting-row"><span class="setting-label">来源</span><span class="setting-value">${escapeHtml(book.sourceName || '')}</span></div>
 				<div class="setting-row"><span class="setting-label">章节</span><span class="setting-value">${book.totalChapters || 0} 章 · 已缓存 ${book.cachedChapters || 0} 章</span></div>`;
 			body.appendChild(info);
+
+			// 多书源：可切换阅读来源（跨设备同步时两台设备可能入架了不同源）
+			if (variants && variants.length > 1) {
+				const swBtn = document.createElement('button');
+				swBtn.className = 'btn btn-soft btn-block';
+				swBtn.style.marginTop = '10px';
+				swBtn.textContent = `切换书源（${variants.length} 个来源）`;
+				swBtn.onclick = () => showSourceSwitcher(book, variants, app, close);
+				body.appendChild(swBtn);
+			}
 
 			if (!isLocal) {
 			const cachedBtn = document.createElement('button');

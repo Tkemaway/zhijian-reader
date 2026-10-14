@@ -3,7 +3,7 @@
  */
 import sources from '../core/sources.js';
 import { searchAll, fetchToc, fetchChapter } from '../core/engine.js';
-import { addBook, saveToc, saveChapters, updateBook, getToc } from '../store/db.js';
+import { addBook, saveToc, saveChapters, updateBook, getToc, getBooks } from '../store/db.js';
 import { downloadBook } from '../store/downloads.js';
 import { icon, toast, showDialog, coverGradient } from './kit.js';
 import { escapeHtml } from './library.js';
@@ -212,6 +212,17 @@ async function startJoin(r, app, rowEl) {
 	if (!source) {
 		toast('书源不存在');
 		btn.disabled = false;
+		return;
+	}
+
+	// 同书同源已在架 → 不重复入架（换一个书源搜同一本书则会作为新来源加入，形成多源）
+	const author = r.author ? r.author.replace(/^作者[:：]\s*/, '') : '';
+	const dupKey = `${(r.bookName || '').trim()}\u0001${author.trim()}\u0001${source.id}`;
+	const already = (await getBooks()).some((b) =>
+		`${(b.title || '').trim()}\u0001${(b.author || '').trim()}\u0001${b.sourceId || ''}` === dupKey);
+	if (already) {
+		toast('这本书已在此书源入架');
+		btn.innerHTML = `${icon('check', 15)} 已入架`;
 		return;
 	}
 

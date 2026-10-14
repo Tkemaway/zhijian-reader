@@ -601,6 +601,18 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 .bc-author { font-size: 10px; opacity: 0.72; text-align: right; letter-spacing: 0.02em; }
 .bc-name { font-size: 13.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bc-sub { font-size: 11px; color: var(--ink-3); }
+/* 多书源角标：同一本书有多个来源时显示 */
+.bc-badge {
+	position: absolute;
+	right: 8px; bottom: 8px;
+	font-size: 10px; line-height: 1;
+	padding: 4px 7px;
+	border-radius: 999px;
+	color: rgba(255, 255, 255, 0.94);
+	background: rgba(0, 0, 0, 0.4);
+	letter-spacing: 0.3px;
+}
+body.ink-mode .bc-badge { display: none; }
 
 /* ---------- 搜索结果 ---------- */
 .search-status {

@@ -1,11 +1,15 @@
 /**
  * 跨设备同步 —— 基于 GitHub Gist 的中转同步
  *
- * 同步内容：阅读进度（字符级锚点）+ 书签
- * 跨设备主键：bookKey = 书名 \u0001 作者
- *   （两台设备的本地 book id 不同，且每次入架都会重新生成，不能直接同步）
- * 冲突策略：按 updatedAt / createdAt 取新（"最近阅读的赢"）
- * 数据方向：每次同步 = 拉取远端 → 与本地合并 → 应用较新者 → 推回远端
+ * 同步内容：阅读进度（字符级锚点）+ 书签 + 书架 + 阅读时长
+ * 跨设备主键：bookKey = 书名 \u0001 作者 \u0001 书源ID（v2 起）
+ *   （本地 book id 每台设备不同且每次入架都变，不能直接用）
+ *   为何要带书源段：同名同作者的书在两台设备可能来自**不同书源**，而不同
+ *   书源的章节划分/更新进度并不一致——若按「书名+作者」合并，进度锚点
+ *   （章节序号）在另一台设备的书源上可能根本不存在、或指向错误章节。
+ *   加入书源段后按源隔离，各源独立同步、互不串扰。
+ *   v1 的旧格式 key 会在合并时自动迁移（用远端书架条目的书源补齐），
+ *   无法归属书源的旧条目丢弃（各设备本地进度会以新 key 重新上传）。
  *
  * 配置（localStorage zj-sync-v1）：
  *   { enabled, token, gistId, login, lastSyncAt, lastResult }
@@ -17,7 +21,7 @@ import { requestText } from '../core/http.js';
 const CFG_KEY = 'zj-sync-v1';
 const GIST_DESC = 'zhijian-sync-v1';
 const GIST_FILE = 'zhijian-sync.json';
-const DATA_VERSION = 1;
+const DATA_VERSION = 2;
 const API = 'https://api.github.com';
 
 const DEFAULTS = { enabled: false, token: '', gistId: '', login: '', lastSyncAt: 0, lastResult: '', lastPushFp: '' };
@@ -44,9 +48,22 @@ export function isSyncEnabled() {
 	return !!(c.enabled && c.token);
 }
 
-/** 跨设备书籍主键（书名+作者，与本地 id 无关） */
+/** 跨设备书籍主键（书名+作者+书源，与本地 id 无关） */
 export function bookKeyOf(book) {
-	return `${(book?.title || '').trim()}\u0001${(book?.author || '').trim()}`;
+	return `${(book?.title || '').trim()}\u0001${(book?.author || '').trim()}\u0001${(book?.sourceId || '').trim()}`;
+}
+
+/**
+ * 远端 key 规范化（v1 → v2 迁移）
+ * v1 格式为「书名\u0001作者」（两段），v2 追加书源段（三段）。
+ * 旧 key 由来源条目携带的书源补齐；无法确定书源的返回 ''（调用方丢弃）。
+ */
+function normalizeRemoteKey(key, sourceId) {
+	const parts = String(key || '').split('\u0001');
+	if (parts.length < 2) return '';
+	if (parts.length >= 3) return key; // 已是 v2 格式
+	const sid = String(sourceId || '').trim();
+	return sid ? `${parts[0]}\u0001${parts[1]}\u0001${sid}` : '';
 }
 
 /**
@@ -205,7 +222,10 @@ async function buildLocalSnapshot() {
 		totalChapters: Number(b.totalChapters) || 0,
 		readChapters: Number(b.readChapters) || 0,
 		addedAt: Number(b.addedAt) || 0,
-		lastReadAt: Number(b.lastReadAt) || 0
+		lastReadAt: Number(b.lastReadAt) || 0,
+		// 多书源：当前阅读的是哪个来源（换源选择跨设备同步，最新一次切换生效）
+		active: b.active ? 1 : 0,
+		activeAt: Number(b.activeAt) || 0
 	}));
 	return {
 		version: DATA_VERSION,
@@ -225,6 +245,10 @@ function mergeBookEntry(a, b) {
 		const xs = [Number(x) || 0, Number(y) || 0].filter((v) => v > 0);
 		return xs.length ? Math.min(...xs) : 0;
 	};
+	// 换源选择：最近一次切换的设备赢（本机刚好同时切换时保留本机）
+	const aActiveAt = Number(a.activeAt) || 0;
+	const bActiveAt = Number(b.activeAt) || 0;
+	const activeWinner = aActiveAt >= bActiveAt ? a : b;
 	return {
 		key: a.key,
 		title: a.title || b.title || '',
@@ -237,7 +261,9 @@ function mergeBookEntry(a, b) {
 		totalChapters: Math.max(Number(a.totalChapters) || 0, Number(b.totalChapters) || 0),
 		readChapters: Math.max(Number(a.readChapters) || 0, Number(b.readChapters) || 0),
 		addedAt: minPositive(a.addedAt, b.addedAt),
-		lastReadAt: Math.max(Number(a.lastReadAt) || 0, Number(b.lastReadAt) || 0)
+		lastReadAt: Math.max(Number(a.lastReadAt) || 0, Number(b.lastReadAt) || 0),
+		active: activeWinner.active ? 1 : 0,
+		activeAt: Math.max(aActiveAt, bActiveAt)
 	};
 }
 
@@ -292,10 +318,12 @@ function mergeReadingDevices(localDevices, remoteDevices) {
 
 /**
  * 合并本地与远端快照
+ * - 先把远端 v1 旧 key 迁移为 v2（补书源段，见 normalizeRemoteKey）；
+ *   同名书来自不同书源时 key 不同，进度互不比较、各归各的源
  * - 进度：**最远优先**（读得更远的赢；完全同位置时取时间较新的）——
  *   这是 Kindle "Furthest Read Location" 的语义。若仅按时间戳取新，
  *   会出现"某台设备停在旧章节、其本地时间却是新的"把另一台更靠前的
- *   进度覆盖掉（造成倒退）。
+ *   进度覆盖掉（造成倒退）
  * - 书签：按锚点去重并集
  * - 时长：按设备分账（见 mergeReadingDevices）
  */
@@ -310,11 +338,36 @@ function mergeSnapshots(local, remote) {
 			reading: { devices: mergeReadingDevices(local.reading?.devices, {}) }
 		};
 	}
+	// ——— 远端 v1 旧 key 迁移（「书名\u0001作者」→ 追加书源段）———
+	// 旧 key 的书源 id 取自远端书架条目；无法归属书源的旧进度/书签丢弃
+	// （各设备本地进度本就在，会以新 key 在后续同步中重新上传）
+	const legacySid = new Map();
+	for (const rb of remote.books || []) {
+		if (rb?.key && String(rb.key).split('\u0001').length === 2) {
+			legacySid.set(rb.key, String(rb.sourceId || '').trim());
+		}
+	}
+	const rBooks = [];
+	for (const rb of remote.books || []) {
+		const nk = normalizeRemoteKey(rb?.key, rb?.sourceId);
+		if (nk) rBooks.push(nk === rb.key ? rb : { ...rb, key: nk });
+	}
+	const rProgress = {};
+	for (const [k, v] of Object.entries(remote.progress || {})) {
+		const nk = normalizeRemoteKey(k, legacySid.get(k));
+		if (nk) rProgress[nk] = v;
+	}
+	const rBookmarks = [];
+	for (const bm of remote.bookmarks || []) {
+		const nk = bm?.key ? normalizeRemoteKey(bm.key, legacySid.get(bm.key)) : '';
+		if (nk) rBookmarks.push(nk === bm.key ? bm : { ...bm, key: nk });
+	}
+
 	const merged = { version: DATA_VERSION, updatedAt: Date.now(), progress: {}, bookmarks: [], books: [], reading: null };
-	const keys = new Set([...Object.keys(local.progress || {}), ...Object.keys(remote.progress || {})]);
+	const keys = new Set([...Object.keys(local.progress || {}), ...Object.keys(rProgress)]);
 	for (const k of keys) {
 		const lp = local.progress?.[k];
-		const rp = remote.progress?.[k];
+		const rp = rProgress[k];
 		if (!lp) { merged.progress[k] = rp; continue; }
 		if (!rp) { merged.progress[k] = lp; continue; }
 		if (isFurther(rp, lp)) { merged.progress[k] = rp; continue; }
@@ -323,7 +376,7 @@ function mergeSnapshots(local, remote) {
 		merged.progress[k] = (Number(rp.updatedAt) || 0) > (Number(lp.updatedAt) || 0) ? rp : lp;
 	}
 	const seen = new Set();
-	for (const bm of [...(remote.bookmarks || []), ...(local.bookmarks || [])]) {
+	for (const bm of [...rBookmarks, ...(local.bookmarks || [])]) {
 		if (!bm || !bm.key || !bm.anchor) continue;
 		const id = `${bm.key}#${bm.anchor.chapterIdx ?? -1}#${bm.anchor.paragraphIdx ?? -1}#${bm.anchor.charOffset ?? 0}`;
 		if (seen.has(id)) continue;
@@ -331,7 +384,7 @@ function mergeSnapshots(local, remote) {
 		merged.bookmarks.push(bm);
 	}
 	merged.reading = { devices: mergeReadingDevices(local.reading?.devices, remote.reading?.devices) };
-	merged.books = mergeBooks(local.books, remote.books);
+	merged.books = mergeBooks(local.books, rBooks);
 	return merged;
 }
 
@@ -362,7 +415,9 @@ async function applySnapshotToLocal(merged, local) {
 				readChapters: rb.readChapters || 0,
 				cachedChapters: 0,
 				addedAt: rb.addedAt || Date.now(),
-				lastReadAt: rb.lastReadAt || 0
+				lastReadAt: rb.lastReadAt || 0,
+				active: rb.active ? 1 : 0,
+				activeAt: rb.activeAt || 0
 			});
 			booksApplied++;
 		} else {
@@ -372,6 +427,11 @@ async function applySnapshotToLocal(merged, local) {
 			if ((rb.totalChapters || 0) > (exist.totalChapters || 0)) patch.totalChapters = rb.totalChapters;
 			if (!exist.tocUrl && rb.tocUrl) patch.tocUrl = rb.tocUrl;
 			if (!exist.coverStyle && rb.coverStyle) patch.coverStyle = rb.coverStyle;
+			// 换源选择：对端切换得更晚 → 跟随（保证两台设备读同一个来源）
+			if ((Number(rb.activeAt) || 0) > (Number(exist.activeAt) || 0)) {
+				patch.active = rb.active ? 1 : 0;
+				patch.activeAt = Number(rb.activeAt) || 0;
+			}
 			if (Object.keys(patch).length) {
 				await updateBook(exist.id, patch);
 				booksApplied++;
@@ -466,7 +526,7 @@ function localFingerprint(snapshot) {
 		return JSON.stringify({
 			p: Object.keys(snapshot.progress || {}).sort().map((k) => [k, snapshot.progress[k]]),
 			b: (snapshot.bookmarks || []).map((bm) => `${bm.key}#${bm.anchor?.chapterIdx ?? ''}#${bm.anchor?.paragraphIdx ?? ''}#${bm.anchor?.charOffset ?? ''}`).sort(),
-			bk: (snapshot.books || []).map((x) => `${x.key}|${x.readChapters}|${x.lastReadAt}|${x.totalChapters}`).sort(),
+			bk: (snapshot.books || []).map((x) => `${x.key}|${x.readChapters}|${x.lastReadAt}|${x.totalChapters}|${x.active}|${x.activeAt}`).sort(),
 			r: Object.keys(snapshot.reading?.devices || {}).sort().map((k) => [k, snapshot.reading.devices[k]])
 		});
 	} catch {
@@ -573,6 +633,11 @@ async function doSyncNow() {
 /** 有未同步的阅读变化时置位；切后台/回前台时立即冲刷 */
 let _dirty = false;
 let _pushTimer = null;
+
+/** 仅供测试：暴露快照合并逻辑（Node 环境无 IndexedDB，跑不了完整同步流程） */
+export function _mergeSnapshotsForTest(local, remote) {
+	return mergeSnapshots(local, remote);
+}
 
 /** 标记"本地有新阅读进度待同步" */
 export function markReadingDirty() {

@@ -1,7 +1,7 @@
 {
   "name": "zhijian-reader",
   "private": true,
-  "version": "2.0.4",
+  "version": "2.0.5",
   "type": "module",
   "description": "纸间 - 静心阅读。Kindle 质感的手机小说阅读器",
   "scripts": {
@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:engine": "node test/engine.test.mjs",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "test:sync": "node test/sync.test.mjs"
   },
   "devDependencies": {
     "@rollup/rollup-win32-x64-msvc": "^4.64.5",
