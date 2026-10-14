@@ -15,7 +15,7 @@ import { gzipSync, gunzipSync } from 'fflate';
 import JSLIB_SOURCE from './fanqie-jslib-source.js';
 import { requestBytes } from './http.js';
 
-const FQ_FIXED_POOL = '2884201529849104,2884201529849104,,'; // 设备注册不可用时的兜底设备（实测可用）
+const FQ_FIXED_POOL = '2884201529849104,2884201529849104,,|2884201529849104,2884201529849104,,'; // 兜底设备×2（满足 FQ_ensure 的补位逻辑，避免触发设备注册）
 
 const BASE_PARAMS = 'ac=wifi&channel=xiaomi_1967_64&aid=1967&app_name=novelapp&version_code=65132&version_name=6.5.1.32&device_platform=android&os=android&ssmix=a&device_type=FRD-AL10&device_brand=honor&language=zh&os_api=28&os_version=9&manifest_version_code=65132&resolution=1080*1920&dpi=480&update_version_code=65132&pv_player=65132&need_personal_recommend=1&player_so_load=1&is_android_pad_screen=0&host_abi=arm64-v8a&dragon_device_type=phone&compliance_status=0';
 
@@ -142,6 +142,14 @@ async function fetchOnce(req) {
 		body: bodyBytes,
 		timeout: 25000
 	});
+	// HTTP 错误透明化（否则 jsLib 会在 JSON 解析处吞掉真实错误）
+	if (r.status >= 400) {
+		let preview = '';
+		try {
+			preview = new TextDecoder('utf-8').decode((r.bytes || new Uint8Array(0)).slice(0, 150)).replace(/\s+/g, ' ').trim();
+		} catch { /* ignore */ }
+		throw new Error(`接口返回 HTTP ${r.status}${preview ? '：' + preview : ''}`);
+	}
 	let bytes = r.bytes || new Uint8Array(0);
 	// 兜底：原生层未自动解压时手动解 gzip（魔数 1f 8b）
 	if (bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
@@ -403,9 +411,19 @@ function makeJavaShim() {
 
 function makeSourceStore() {
 	const KEY = 'zj-fqapp-';
+	const mem = new Map(); // 内存兜底：localStorage 不可用（Node 测试/隐私模式）时仍能读写
 	return {
-		get(k) { try { return localStorage.getItem(KEY + k) || ''; } catch { return ''; } },
-		put(k, v) { try { localStorage.setItem(KEY + k, String(v)); } catch { /* ignore */ } },
+		get(k) {
+			try {
+				const v = localStorage.getItem(KEY + k);
+				if (v) return v;
+			} catch { /* ignore */ }
+			return mem.get(k) || '';
+		},
+		put(k, v) {
+			mem.set(k, String(v));
+			try { localStorage.setItem(KEY + k, String(v)); } catch { /* ignore */ }
+		},
 		set(k, v) { this.put(k, v); }
 	};
 }
@@ -442,18 +460,45 @@ function ensurePool() {
 //  对外能力：搜索 / 目录 / 正文
 // ============================================================
 
-/** 搜索（返回统一结果结构） */
+// 官方搜索的固定参数（来自开源书源实现）
+const SEARCH_Q_TAIL = '&offset=0&enterfrom_aid=&enter_from=inner_search&app_name=news_article&version_name=7.0.8&app_version=7.0.8&channel=tt_huawei2019_yz&version_code=708&device_platform=android&parent_enterfrom=novel_list&novel_host=&aid=13&scm_version=1.0.0.4112&device_type=25053RT47C&device_brand=Redmi&language=zh&os_api=35&os_version=15&openudid=0123456789abcdef&update_version_code=70899&plugin=0&tma_jssdk_version=1.10.0.0&rom_version=miui__os2.0.209.0.volcnxm';
+
+function mapSearchItems(items) {
+	return (items || []).map((it) => ({
+		bookName: String(it.name || ''),
+		author: it.author ? `作者：${it.author}` : '',
+		bookUrl: String(it.bookUrl || ''),
+		intro: String(it.intro || '').slice(0, 120),
+		kind: String(it.kind || '')
+	})).filter((x) => x.bookName && /page\/\d+/.test(x.bookUrl));
+}
+
+/** 搜索（官方域名 + 签名直连；异常或空结果时回退第三方反代） */
+let _officialSearchBroken = false; // 官方搜索路径 404 后不再重试（会话级）
 export async function fqAppSearch(keyword) {
+	const kw = String(keyword || '');
+	// 1. 官方接口（更稳定，不依赖第三方域名）
+	if (!_officialSearchBroken) {
+		try {
+			const results = await runFq(() => {
+				const fq = getFq();
+				ensurePool();
+				const q = 'q=' + encodeURIComponent(kw) + SEARCH_Q_TAIL;
+				const raw = String(fq.lib.api(fq.java, fq.source, '/api/novel/channel/homepage/search/search/v1/', q, 'https://api5-normal-sinfonlineb.fqnovel.com', 13));
+				let d;
+				try { d = JSON.parse(raw); } catch { return []; }
+				return mapSearchItems((d.data && d.data.ret_data) || []);
+			});
+			if (results.length) return results;
+		} catch (e) {
+			if (/HTTP 404/.test(e.message || '')) _officialSearchBroken = true;
+		}
+	}
+	// 2. 回退：第三方反代（原始实现）
 	return runFq(() => {
 		const fq = getFq();
-		const list = fq.lib.search(fq.source, String(keyword || ''), '1') || [];
-		return list.map((it) => ({
-			bookName: String(it.name || ''),
-			author: it.author ? `作者：${it.author}` : '',
-			bookUrl: String(it.bookUrl || ''),
-			intro: String(it.intro || '').slice(0, 120),
-			kind: String(it.kind || '')
-		})).filter((it) => it.bookName && /page\/\d+/.test(it.bookUrl));
+		const list = fq.lib.search(fq.source, kw, '1') || [];
+		return mapSearchItems(list);
 	});
 }
 

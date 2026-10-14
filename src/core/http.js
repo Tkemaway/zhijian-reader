@@ -122,8 +122,14 @@ export async function requestBytes(url, opts = {}) {
 				signal?.throwIfAborted();
 				let data = res.data;
 				if (typeof data === 'string') {
-					// ARRAYBUFFER 响应 → base64 字符串
-					data = base64ToBytes(data);
+					// ARRAYBUFFER 响应 → base64 字符串；
+					// 但错误响应（4xx 的 HTML 等）会以原文返回 → 尝试 base64 失败则按文本处理
+					const compact = data.replace(/\s+/g, '');
+					try {
+						data = compact ? base64ToBytes(compact) : new Uint8Array(0);
+					} catch {
+						data = new TextEncoder().encode(data);
+					}
 				} else if (data && data.type === 'Buffer' && Array.isArray(data.data)) {
 					// Node Buffer 形状（JSBridge 序列化）
 					data = new Uint8Array(data.data);
