@@ -491,24 +491,36 @@ function runFanqieSelfTest() {
 				log.textContent += `${ok === true ? '✅' : ok === false ? '❌' : '…'} ${msg}\n`;
 			};
 			(async () => {
+				const { fqAppSearch, fqAppToc, fqAppChapter } = await import('../core/fanqie-app.js');
+				// 每一步独立捕获：一处失败不影响其余环节的诊断
+				let t = Date.now();
+				let results = null;
 				try {
-					const { fqAppSearch, fqAppToc, fqAppChapter } = await import('../core/fanqie-app.js');
-					let t = Date.now();
-					const results = await fqAppSearch('十日终焉');
+					results = await fqAppSearch('十日终焉');
 					step(`搜索「十日终焉」：${results.length} 条（${Date.now() - t}ms）`, results.length > 0);
 					if (results[0]) step(`首条：${results[0].bookName}`, true);
-					t = Date.now();
-					const toc = await fqAppToc('7143038691944959011');
-					step(`目录：${toc.chapters.length} 章（${Date.now() - t}ms）`, toc.chapters.length > 100);
-					t = Date.now();
-					const paras = await fqAppChapter(toc.chapters[0].url);
-					step(`正文：${paras.length} 段（${Date.now() - t}ms）`, paras.length > 3);
-					if (paras[0]) step(`首段：${paras[0].slice(0, 42)}`, true);
-					log.textContent += '\n自检完成';
 				} catch (e) {
-					step(`失败：${e.message || e}`, false);
-					log.textContent += '\n请把此页面截图反馈';
+					step(`搜索失败：${e.message || e}`, false);
 				}
+				let toc = null;
+				try {
+					t = Date.now();
+					toc = await fqAppToc('7143038691944959011');
+					step(`目录：${toc.chapters.length} 章（${Date.now() - t}ms）`, toc.chapters.length > 100);
+				} catch (e) {
+					step(`目录失败：${e.message || e}`, false);
+				}
+				if (toc && toc.chapters.length) {
+					try {
+						t = Date.now();
+						const paras = await fqAppChapter(toc.chapters[0].url);
+						step(`正文：${paras.length} 段（${Date.now() - t}ms）`, paras.length > 3);
+						if (paras[0]) step(`首段：${paras[0].slice(0, 42)}`, true);
+					} catch (e) {
+						step(`正文失败：${e.message || e}`, false);
+					}
+				}
+				log.textContent += '\n自检完成';
 			})();
 		}
 	});

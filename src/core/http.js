@@ -128,6 +128,11 @@ export async function requestBytes(url, opts = {}) {
 					try {
 						data = compact ? base64ToBytes(compact) : new Uint8Array(0);
 					} catch {
+						// 含 U+FFFD 替换符 → 二进制流被当作文本读取后的乱码（字节已丢失，
+						// 不可恢复）。明确报错，避免上层出现莫名其妙的 JSON 解析错误。
+						if (data.includes('\uFFFD')) {
+							throw new Error('响应为不可解码的压缩数据（请反馈此提示）');
+						}
 						data = new TextEncoder().encode(data);
 					}
 				} else if (data && data.type === 'Buffer' && Array.isArray(data.data)) {

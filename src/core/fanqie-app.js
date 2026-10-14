@@ -131,11 +131,16 @@ function httpSync(method, url, headers, body) {
 async function fetchOnce(req) {
 	const bodyBytes = req.body && req.body.length ? req.body : null;
 	const headers = { ...(req.headers || {}) };
-	// 明确只用 gzip：字节接口可能按请求方声明返回 br（Brotli），
-	// 而真机 OkHttp 不支持 br 透明解压（Node 会自动解，掩盖该差异）
-	if (!Object.keys(headers).some((k) => k.toLowerCase() === 'accept-encoding')) {
-		headers['Accept-Encoding'] = 'gzip';
+	// 一律要求明文响应（identity），不允许任何压缩：
+	//  1) 手动设置 Accept-Encoding 会关闭 Android HttpURLConnection 的透明解压；
+	//  2) 而 CapacitorHttp 对 application/json 响应会无视 responseType，直接把原始流
+	//     按文本读取（parseJSON 失败时还把乱码字符串原样返回）——压缩二进制一旦走这条
+	//     通道就变成不可恢复的乱码（表现为 "Unexpected token '�' ... is not valid JSON"）。
+	// identity 从源头杜绝（顺带避免 br 在渲染层无法解压的问题）。
+	for (const k of Object.keys(headers)) {
+		if (k.toLowerCase() === 'accept-encoding') delete headers[k];
 	}
+	headers['Accept-Encoding'] = 'identity';
 	const r = await requestBytes(req.url, {
 		method: req.method || 'GET',
 		headers,
@@ -151,7 +156,7 @@ async function fetchOnce(req) {
 		throw new Error(`接口返回 HTTP ${r.status}${preview ? '：' + preview : ''}`);
 	}
 	let bytes = r.bytes || new Uint8Array(0);
-	// 兜底：原生层未自动解压时手动解 gzip（魔数 1f 8b）
+	// 兜底：服务端无视 identity 仍返回 gzip 时手动解压（魔数 1f 8b）
 	if (bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
 		try { bytes = gunzipSync(bytes); } catch { /* 保留原样 */ }
 	}
