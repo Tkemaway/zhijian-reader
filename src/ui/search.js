@@ -4,6 +4,7 @@
 import sources from '../core/sources.js';
 import { searchAll, fetchToc, fetchChapter } from '../core/engine.js';
 import { addBook, saveToc, saveChapters, updateBook, getToc, getBooks } from '../store/db.js';
+import { findSameBookRecord } from '../store/book-identity.js';
 import { downloadBook } from '../store/downloads.js';
 import { icon, toast, showDialog, coverGradient } from './kit.js';
 import { escapeHtml } from './library.js';
@@ -216,10 +217,11 @@ async function startJoin(r, app, rowEl) {
 	}
 
 	// 同书同源已在架 → 不重复入架（换一个书源搜同一本书则会作为新来源加入，形成多源）
+	// 用 book-identity 的统一口径判定：手写 trim 拼接会漏掉
+	//「《书名》」「作者：xx」「首尾空格」等写法差异，导致同一本书被反复入架
 	const author = r.author ? r.author.replace(/^作者[:：]\s*/, '') : '';
-	const dupKey = `${(r.bookName || '').trim()}\u0001${author.trim()}\u0001${source.id}`;
-	const already = (await getBooks()).some((b) =>
-		`${(b.title || '').trim()}\u0001${(b.author || '').trim()}\u0001${b.sourceId || ''}` === dupKey);
+	const candidate = { title: r.bookName, author, sourceId: source.id };
+	const already = !!findSameBookRecord(candidate, await getBooks());
 	if (already) {
 		toast('这本书已在此书源入架');
 		btn.innerHTML = `${icon('check', 15)} 已入架`;
@@ -278,8 +280,11 @@ async function startJoin(r, app, rowEl) {
 			addedAt: Date.now(),
 			lastReadAt: 0
 		};
-		await addBook(book);
-		await saveToc(bookId, toc.chapters);
+		// addBook 是统一写入闸门：返回的可能是「同名同源」的已有记录
+		// （例如书名写法不同导致上面的 dupKey 没命中），目录必须挂到它的 id 上
+		const saved = await addBook(book);
+		const realId = saved?.id || bookId;
+		await saveToc(realId, toc.chapters);
 
 		if (choice === 0) {
 			toast(`《${r.bookName}》已入架`);
@@ -292,7 +297,7 @@ async function startJoin(r, app, rowEl) {
 			? Math.max(1, toc.chapters.reduce((mx, c, i) => (c.locked ? mx : i + 1), 0))
 			: Math.min(choice, total);
 		btn.textContent = `缓存 0/${count}`;
-		const job = await downloadBook(book, {
+		const job = await downloadBook({ ...book, ...saved, id: realId }, {
 			target: count,
 			onProgress: (p) => { btn.textContent = `缓存 ${p.completed + p.failed.length}/${p.total}`; }
 		});

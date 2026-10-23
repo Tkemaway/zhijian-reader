@@ -6,6 +6,7 @@ import './app.css';
 import { icon, applyInkMode } from './ui/kit.js';
 import { loadSettings } from './store/stats.js';
 import { isSyncEnabled, syncNow } from './store/sync.js';
+import { reconcileDuplicateBooks } from './store/reconcile.js';
 import { renderLibrary } from './ui/library.js';
 import { renderSearch } from './ui/search.js';
 import { renderProfile } from './ui/profile.js';
@@ -123,6 +124,17 @@ export const app = {
 const bootSettings = loadSettings();
 applyInkMode(bootSettings.inkMode);
 app.render();
+
+// 启动即整理书架：把历史上被旧同步逻辑复制出来的重复记录合并回一条。
+// 不依赖同步开关——未开启同步的老用户同样会有存量重复，只靠界面分组掩盖，
+// 库里的重复记录会一直在（换源面板、统计书数、存储占用都会被它影响）。
+reconcileDuplicateBooks()
+	.then((res) => {
+		if (res?.merged) {
+			app.refresh(); // 当前若停在书架页，立刻反映整理结果
+		}
+	})
+	.catch(() => { /* 整理失败不影响启动 */ });
 
 // 跨设备同步：已开启时启动即静默拉取一次（尽早，保证打开书前进度已是最新）
 if (isSyncEnabled()) {

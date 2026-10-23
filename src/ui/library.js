@@ -1,11 +1,14 @@
 /**
  * 书架页 —— 继续阅读 + 书籍网格 + 今日阅读状态
  */
-import { getBooks, getProgress, deleteBook, getDownload, addBook, updateBook, saveToc, saveChapters } from '../store/db.js';
+import { getBooksDeduped, getProgress, deleteBook, getDownload, addBook, updateBook, saveToc, saveChapters } from '../store/db.js';
 import { downloadBook, pauseDownload, isDownloading } from '../store/downloads.js';
 import { refreshBookToc } from '../store/toc-refresh.js';
+// 书籍身份口径：书架分组、换源匹配、查重全部走同一套（与同步层一致）
+import { bookTitleAuthorKey } from '../store/book-identity.js';
 import { getLimitStateWithExtra, fmtDuration, getTodaySeconds } from '../store/stats.js';
 import { icon, toast, showDialog, showSheet, coverGradient } from './kit.js';
+import { openSourceSwitcher } from './source-switch.js';
 import { parseBookFile } from '../core/importer.js';
 
 export async function renderLibrary(container, app) {
@@ -38,10 +41,11 @@ export async function renderLibrary(container, app) {
 	// 今日阅读状态条
 	renderStatus(container.querySelector('#read-status'), app);
 
-	// 书籍列表
+	// 书籍列表（getBooksDeduped：同身份+同书源的重复记录只呈现一条，
+	// 真正的合并由同步时的 reconcile 落库）
 	let books = [];
 	try {
-		books = await getBooks();
+		books = await getBooksDeduped();
 	} catch (e) {
 		console.error(e);
 	}
@@ -146,9 +150,13 @@ function renderContinue(zone, book, app) {
 	});
 }
 
-/** 同书分组键（书名+作者）：不同书源的同一本书归为一组，书架只显示一张卡片 */
+/**
+ * 同书分组键（书名+作者）：不同书源的同一本书归为一组，书架只显示一张卡片。
+ * 用统一身份口径而非 trim——否则老库里「斗破苍穹」与「斗破苍穹 」会被当成
+ * 两本书显示成两张卡片，用户会以为「书架复制了一份」。
+ */
 function groupKeyOf(book) {
-	return `${(book.title || '').trim()}\u0001${(book.author || '').trim()}`;
+	return bookTitleAuthorKey(book);
 }
 
 /** 组内当前书源：用户显式切过的（active）优先，其次本机已缓存（离线可读）的，
@@ -160,70 +168,6 @@ function pickActiveVariant(variants) {
 		(b.cachedChapters || 0) - (a.cachedChapters || 0) ||
 		(b.lastReadAt || 0) - (a.lastReadAt || 0) ||
 		(b.addedAt || 0) - (a.addedAt || 0))[0];
-}
-
-/** 切换本书的阅读书源（目录/缓存/进度按源独立，互不影响） */
-async function setActiveVariant(target, variants) {
-	const now = Date.now();
-	await updateBook(target.id, { active: 1, activeAt: now });
-	target.active = 1;
-	target.activeAt = now;
-	for (const v of variants) {
-		if (v.id === target.id) continue;
-		if (v.active) updateBook(v.id, { active: 0 }).catch(() => {});
-		v.active = 0;
-	}
-}
-
-/** 书源切换面板：同一本书的多个来源供用户选择 */
-function showSourceSwitcher(current, variants, app, closeParent) {
-	const ordered = [...variants].sort((a, b) =>
-		(b.active ? 1 : 0) - (a.active ? 1 : 0) || (b.lastReadAt || 0) - (a.lastReadAt || 0));
-	showSheet({
-		title: '切换书源',
-		build: (body, close) => {
-			const hint = document.createElement('p');
-			hint.className = 'setting-hint';
-			hint.style.marginBottom = '12px';
-			hint.textContent = '同一本书可能来自不同书源，章节划分与更新各有不同；可自行选择阅读哪个来源，各自的进度互不影响。';
-			body.appendChild(hint);
-			for (const v of ordered) {
-				const isCur = v.id === current.id;
-				const bits = [`${v.totalChapters || 0} 章`];
-				if (v.cachedChapters) bits.push(`已缓存 ${v.cachedChapters} 章`);
-				if (v.lastReadAt) bits.push('有阅读进度');
-				const row = document.createElement('button');
-				row.className = 'btn btn-soft btn-block';
-				row.style.textAlign = 'left';
-				row.style.marginTop = '8px';
-				row.innerHTML = `
-					<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-						<div style="min-width:0">
-							<div style="font-weight:600">${escapeHtml(v.sourceName || '未知来源')}${isCur ? ' · 当前' : ''}</div>
-							<div class="setting-hint" style="margin:3px 0 0">${escapeHtml(bits.join(' · '))}</div>
-						</div>
-						${isCur ? icon('check', 18) : ''}
-					</div>`;
-				row.disabled = isCur;
-				if (!isCur) {
-					row.onclick = async () => {
-						row.disabled = true;
-						try {
-							await setActiveVariant(v, variants);
-							close();
-							closeParent?.();
-							app.refresh();
-							toast(`已切换到「${v.sourceName || '未知来源'}」`);
-						} catch {
-							toast('切换失败，请重试');
-							row.disabled = false;
-						}
-					};
-				}
-				body.appendChild(row);
-			}
-		}
-	});
 }
 
 /** 书籍卡片（variants：同书名同作者的全部书源；多个时显示角标并标注当前源） */
@@ -278,13 +222,17 @@ function showBookActions(book, app, variants = null) {
 				<div class="setting-row"><span class="setting-label">章节</span><span class="setting-value">${book.totalChapters || 0} 章 · 已缓存 ${book.cachedChapters || 0} 章</span></div>`;
 			body.appendChild(info);
 
-			// 多书源：可切换阅读来源（跨设备同步时两台设备可能入架了不同源）
-			if (variants && variants.length > 1) {
+			// 换源：不再要求「书架里已存在多个来源」——面板里可以现场搜索其他书源，
+			// 这是用户「读着读着发现当前源缺章/错字/停更」时最需要的入口
+			if (!isLocal) {
 				const swBtn = document.createElement('button');
 				swBtn.className = 'btn btn-soft btn-block';
 				swBtn.style.marginTop = '10px';
-				swBtn.textContent = `切换书源（${variants.length} 个来源）`;
-				swBtn.onclick = () => showSourceSwitcher(book, variants, app, close);
+				swBtn.innerHTML = `${icon('list', 18)} 换源${variants && variants.length > 1 ? `（已有 ${variants.length} 个来源）` : ''}`;
+				swBtn.onclick = () => {
+					close();
+					openSourceSwitcher({ book, app });
+				};
 				body.appendChild(swBtn);
 			}
 
@@ -413,8 +361,11 @@ async function importLocalBook(file, app) {
 			addedAt: Date.now(),
 			lastReadAt: 0
 		};
-		await addBook(book);
-		await saveToc(bookId, parsed.chapters.map((c) => ({ title: c.title, url: '' })));
+		// addBook 是统一写入闸门：同名同作者的本地书若已存在会返回已有记录，
+		// 目录/章节必须挂到它的 id 上，否则数据会写到一条不存在的书记录下
+		const saved = await addBook(book);
+		const realId = saved?.id || bookId;
+		await saveToc(realId, parsed.chapters.map((c) => ({ title: c.title, url: '' })));
 
 		// 全量写入章节（分批，避免单事务过大）
 		const list = parsed.chapters.map((c, idx) => ({
@@ -426,10 +377,11 @@ async function importLocalBook(file, app) {
 		}));
 		const BATCH = 80;
 		for (let i = 0; i < list.length; i += BATCH) {
-			await saveChapters(bookId, list.slice(i, i + BATCH));
+			await saveChapters(realId, list.slice(i, i + BATCH));
 		}
 
-		toast(`《${book.title}》已导入 · ${total} 章`, 2600);
+		if (saved?.__merged) toast(`《${saved.title || book.title}》已在书架，已更新为 ${total} 章`, 2600);
+		else toast(`《${book.title}》已导入 · ${total} 章`, 2600);
 		app.refresh();
 	} catch (e) {
 		console.error(e);

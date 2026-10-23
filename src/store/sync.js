@@ -14,9 +14,12 @@
  * 配置（localStorage zj-sync-v1）：
  *   { enabled, token, gistId, login, lastSyncAt, lastResult }
  */
-import { getBooks, addBook, updateBook, getAllProgress, getAllBookmarks, saveProgress, saveBookmark } from './db.js';
+import { getBooks, addBook, updateBook, getAllProgress, getAllBookmarks, saveProgress, saveBookmark, getToc } from './db.js';
 import { getLocalDailyMap, saveRemoteReadingMap } from './stats.js';
 import { requestText } from '../core/http.js';
+// 书籍身份口径（唯一来源）：书名/作者/书源的归一化与「同一本书」判定
+import { bookIdentityKey, bookKeyOfParts, bookTitleSourceKey, findSameBookRecord, normalizeBookFields, normalizeTitle, pickMostRecent, authorsCompatible } from './book-identity.js';
+import { reconcileDuplicateBooks } from './reconcile.js';
 
 const CFG_KEY = 'zj-sync-v1';
 const GIST_DESC = 'zhijian-sync-v1';
@@ -48,22 +51,32 @@ export function isSyncEnabled() {
 	return !!(c.enabled && c.token);
 }
 
-/** 跨设备书籍主键（书名+作者+书源，与本地 id 无关） */
+/**
+ * 跨设备书籍主键（书名+作者+书源，与本地 id 无关）
+ * 归一化统一委托给 book-identity.js：此前这里只做 trim，而书名/作者在
+ * 不同设备、不同书源下常有「《书名》」「作者：xx」「首尾空格」等写法差异，
+ * 两边算出的 key 不一致 → 同步时匹配不上本地记录 → 每轮同步新增一条重复书。
+ */
 export function bookKeyOf(book) {
-	return `${(book?.title || '').trim()}\u0001${(book?.author || '').trim()}\u0001${(book?.sourceId || '').trim()}`;
+	return bookIdentityKey(book);
 }
 
 /**
- * 远端 key 规范化（v1 → v2 迁移）
+ * 远端 key 规范化（v1 → v2 迁移 + 统一归一化）
  * v1 格式为「书名\u0001作者」（两段），v2 追加书源段（三段）。
  * 旧 key 由来源条目携带的书源补齐；无法确定书源的返回 ''（调用方丢弃）。
+ *
+ * 注意 v2 分支**不能**直接把旧 key 原样返回：远端 key 是别的设备（可能是旧
+ * 版本、或书源返回的首尾空格/《书名》/「作者：」写法）算出来的，
+ * 必须用 book-identity 的口径重新拼一遍，
+ * 否则本机 bookKeyOf 算出的键与它不一致 → 永远匹配不上 → 重复建书。
  */
 function normalizeRemoteKey(key, sourceId) {
 	const parts = String(key || '').split('\u0001');
 	if (parts.length < 2) return '';
-	if (parts.length >= 3) return key; // 已是 v2 格式
+	if (parts.length >= 3) return bookKeyOfParts(parts[0], parts[1], parts[2]);
 	const sid = String(sourceId || '').trim();
-	return sid ? `${parts[0]}\u0001${parts[1]}\u0001${sid}` : '';
+	return sid ? bookKeyOfParts(parts[0], parts[1], sid) : '';
 }
 
 /**
@@ -267,17 +280,62 @@ function mergeBookEntry(a, b) {
 	};
 }
 
-/** 合并书架列表（按跨设备 bookKey） */
+/**
+ * 书架条目的归并键：同书 + 同书源视为同一条。
+ * 不能用 key 字符串本身——同一本书在两台设备上算出的 key 可能因作者
+ * 缺失/写法不同而不同（「天蚕土豆」vs「天蚕土豆 著」→ 两个 key），
+ * 用 key 归并会让它们在远端长期并存，进而被各设备当成两本书拉回本地。
+ */
+function bookMergeKey(b) {
+	const norm = normalizeBookFields(b);
+	// 旧格式条目可能只带 key 而没有 title/author 字段（早期版本上传的快照）——
+	// 此时从 key 自身取书名/书源段，否则会被算成"空书名"而无法与携带字段的
+	// 同一本书归并，导致同一本书在远端长期并存、被各设备分别拉成两条
+	const parts = String(b?.key || '').split('\u0001');
+	const title = norm.title || (parts.length >= 2 ? parts[0] : '');
+	const sid = norm.sourceId || (parts.length >= 3 ? parts[2] : '');
+	// 缺少书名或书源时只按完整身份归并（宁可不合并，也不误合不同书源）
+	if (!title || !sid) return 'id:' + bookIdentityKey(norm);
+	return bookTitleSourceKey({ title, sourceId: sid });
+}
+
+/**
+ * 合并书架列表（按「同书同源」归并，而非按 key 字符串）。
+ *
+ * 归并不止按 key：同一本书在两台设备上算出的 key 可能因作者缺失/写法不同
+ * 而不同（「天蚕土豆」vs「天蚕土豆 著」），只看 key 会让它们在远端长期并存，
+ * 进而被各设备分别拉成本地两条。
+ *
+ * 但归并**必须校验作者兼容**：同一书源下同名不同作者是两本不同的书，
+ * 若只按「书名+书源」归并，会出现两本书的进度/书签被并到同一条上（数据串味）。
+ */
 function mergeBooks(localBooks, remoteBooks) {
 	const map = new Map();
-	for (const b of localBooks || []) {
-		if (b && b.key) map.set(b.key, { ...b });
+	const groups = new Map(); // 候选键 → 已归并的条目列表（用于作者二次校验）
+	for (const b of [...(localBooks || []), ...(remoteBooks || [])]) {
+		if (!b) continue;
+		const norm = normalizeBookFields(b);
+		const site = bookMergeKey(norm);
+		let merged = null;
+		const bucket = groups.get(site) || [];
+		// 在候选桶里找第一条作者兼容的记录（缺作者视为兼容）
+		const prev = bucket.find((x) => authorsCompatible(x.author, norm.author));
+		if (prev) {
+			merged = mergeBookEntry(prev, norm);
+			bucket[bucket.indexOf(prev)] = merged;
+		} else {
+			merged = norm;
+			bucket.push(merged);
+		}
+		groups.set(site, bucket);
+		// 有明确书名+书源时，把 key 统一规范到归一化后的完整身份键，
+		// 这样两个原本写法不同的条目不会在远端继续并存；
+		// 字段不全的旧条目保留原 key，避免把已有信息改没
+		merged.key = merged.title && merged.sourceId ? bookIdentityKey(merged) : merged.key;
 	}
-	for (const rb of remoteBooks || []) {
-		if (!rb || !rb.key) continue;
-		map.set(rb.key, mergeBookEntry(map.get(rb.key), rb));
-	}
-	return [...map.values()];
+	const keyMap = new Map();
+	for (const bucket of groups.values()) for (const b of bucket) keyMap.set(b.key, b);
+	return [...keyMap.values()];
 }
 
 /** 阅读位置的次序（章节 → 段落 → 字符），用于"最远优先"比较 */
@@ -389,84 +447,210 @@ function mergeSnapshots(local, remote) {
 }
 
 /** 把合并结果中"更远"的进度与"新"的书签写回本地（本地没有的书先跳过，入架后下次同步生效） */
+/**
+ * 把远端阅读进度对齐到本机目录。
+ *
+ * 两台设备的目录版本可能不同（一端检查过更新、或缓存的是旧目录），远端
+ * 的 chapterIdx 直接套到本机会错位，越界时还会被阅读器夹到「最后一章」。
+ * 用 chapterTitle 校正（章节被重排但标题不变时也能找回原位）：
+ *   - 标题命中（含换到别的序号）：字符/段落锚点仍属于同一章内容，保留
+ *   - 仅按范围夹取：章节身份不确定，丢弃锚点，只落到章首
+ */
+async function alignProgressToLocalToc(p, book, tocCache) {
+	let toc = tocCache.get(book.id);
+	if (toc === undefined) {
+		try { toc = (await getToc(book.id)) || []; } catch { toc = []; }
+		tocCache.set(book.id, toc);
+	}
+	if (!toc.length) return p;
+	const rawIdx = Number.isInteger(p?.chapterIdx) ? p.chapterIdx : 0;
+	let idx = Math.max(0, Math.min(rawIdx, toc.length - 1));
+	let titleHit = false;
+	const want = normalizeTitle(p?.chapterTitle || '');
+	if (want) {
+		if (normalizeTitle(toc[idx]?.title || '') === want) {
+			titleHit = true;
+		} else {
+			const found = toc.findIndex((c) => normalizeTitle(c?.title || '') === want);
+			if (found >= 0) { idx = found; titleHit = true; }
+		}
+	}
+	if (idx === rawIdx) return p;
+	return { ...p, chapterIdx: idx, anchor: titleHit ? (p.anchor || null) : null };
+}
+
+/** 书签同样按标题对齐（章节重排后书签不会漂到别的章） */
+function alignBookmarkToLocalToc(bm, toc) {
+	if (!toc?.length) return bm;
+	const a = bm?.anchor || {};
+	const rawIdx = Number.isInteger(a.chapterIdx) ? a.chapterIdx : 0;
+	let idx = Math.max(0, Math.min(rawIdx, toc.length - 1));
+	const want = normalizeTitle(bm?.chapterTitle || '');
+	if (want && normalizeTitle(toc[idx]?.title || '') !== want) {
+		const found = toc.findIndex((c) => normalizeTitle(c?.title || '') === want);
+		if (found >= 0) idx = found;
+	}
+	if (idx === rawIdx) return bm;
+	return { ...bm, anchor: { ...a, chapterIdx: idx } };
+}
+
 async function applySnapshotToLocal(merged, local) {
 	let booksApplied = 0;
 	let progressApplied = 0;
 	let bookmarksApplied = 0;
 
 	// 0. 书架：先创建/更新本地书架（"幽灵书"只同步元数据，打开时按 tocUrl 自动拉目录），
-	//    这样其后的进度/书签才能匹配到对应的书
+	//    这样其后的进度/书签才能匹配到对应的书。
+	//
+	//    ⚠️ 这里是「同步会复制出一份新书」的历史踩坑点，两条铁律：
+	//    (1) 新建记录前，除了按身份键精确匹配，还必须用 findSameBookRecord
+	//        做一次降级匹配（书名+书源），把「同一本书但键写法不同」的远端条目
+	//        合并到已有记录上，而不是再插一条；
+	//    (2) 新建/更新后要**立即**把该键写回索引，否则同轮次后面的进度、书签、
+	//        以及其它指向同一本书的远端条目都会匹配失败。
+	// 先合并本地存量重复记录，再做任何匹配：
+	// 否则同一身份的多条记录会在下面的索引里互相覆盖（后写入者胜），
+	// 远端元数据可能落到一条「不该保留」的记录上，最终保留哪条变得不确定。
+	let reconciled = 0;
+	try {
+		reconciled = (await reconcileDuplicateBooks()).merged;
+	} catch { /* 整理失败不应阻断本轮同步 */ }
+
 	let books = await getBooks();
-	let byKey = new Map(books.map((b) => [bookKeyOf(b), b]));
+	const byKey = new Map();
+	const byId = new Map();
+	for (const b of books) {
+		byId.set(b.id, b);
+		const k = bookKeyOf(b);
+		// 理论上整理后不会再有同键记录；若仍有（并发写入），
+		// 保留「最值得保留」的那条，避免结果依赖遍历顺序
+		byKey.set(k, byKey.has(k) ? pickMostRecent([byKey.get(k), b]) : b);
+	}
+	let booksAdded = 0;
+	let booksUpdated = 0;
+
 	for (const rb of merged.books || []) {
 		if (!rb || !rb.key) continue;
-		const exist = byKey.get(rb.key);
+		// 远端条目先归一化落库字段，保证其身份键与本地口径一致
+		const remoteBook = normalizeBookFields(rb);
+		let exist = byKey.get(bookIdentityKey(remoteBook));
 		if (!exist) {
-			await addBook({
-				id: `b_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-				title: rb.title || '',
-				author: rb.author || '',
-				coverStyle: rb.coverStyle || '',
-				sourceId: rb.sourceId || '',
-				sourceName: rb.sourceName || '',
-				bookUrl: rb.bookUrl || '',
-				tocUrl: rb.tocUrl || '',
-				totalChapters: rb.totalChapters || 0,
-				readChapters: rb.readChapters || 0,
-				cachedChapters: 0,
-				addedAt: rb.addedAt || Date.now(),
-				lastReadAt: rb.lastReadAt || 0,
-				active: rb.active ? 1 : 0,
-				activeAt: rb.activeAt || 0
-			});
-			booksApplied++;
-		} else {
+			// 降级匹配：同名 + 同书源（作者在不同书源/设备下常缺失或写法不同）
+			exist = findSameBookRecord(remoteBook, [...byId.values()]);
+		}
+
+		if (exist) {
+			const keyBefore = bookIdentityKey(exist);
 			const patch = {};
-			if ((rb.readChapters || 0) > (exist.readChapters || 0)) patch.readChapters = rb.readChapters;
-			if ((rb.lastReadAt || 0) > (exist.lastReadAt || 0)) patch.lastReadAt = rb.lastReadAt;
-			if ((rb.totalChapters || 0) > (exist.totalChapters || 0)) patch.totalChapters = rb.totalChapters;
-			if (!exist.tocUrl && rb.tocUrl) patch.tocUrl = rb.tocUrl;
-			if (!exist.coverStyle && rb.coverStyle) patch.coverStyle = rb.coverStyle;
+			if ((remoteBook.readChapters || 0) > (exist.readChapters || 0)) patch.readChapters = remoteBook.readChapters;
+			if ((remoteBook.lastReadAt || 0) > (exist.lastReadAt || 0)) patch.lastReadAt = remoteBook.lastReadAt;
+			if ((remoteBook.totalChapters || 0) > (exist.totalChapters || 0)) patch.totalChapters = remoteBook.totalChapters;
+			if (!exist.tocUrl && remoteBook.tocUrl) patch.tocUrl = remoteBook.tocUrl;
+			if (!exist.bookUrl && remoteBook.bookUrl) patch.bookUrl = remoteBook.bookUrl;
+			if (!exist.coverStyle && remoteBook.coverStyle) patch.coverStyle = remoteBook.coverStyle;
+			// 本地作者为空而远端有 → 补齐（补齐后键更稳定，后续同步不会反复退化匹配）
+			if (!exist.author && remoteBook.author) patch.author = remoteBook.author;
+			if (!exist.sourceName && remoteBook.sourceName) patch.sourceName = remoteBook.sourceName;
 			// 换源选择：对端切换得更晚 → 跟随（保证两台设备读同一个来源）
-			if ((Number(rb.activeAt) || 0) > (Number(exist.activeAt) || 0)) {
-				patch.active = rb.active ? 1 : 0;
-				patch.activeAt = Number(rb.activeAt) || 0;
+			if ((Number(remoteBook.activeAt) || 0) > (Number(exist.activeAt) || 0)) {
+				patch.active = remoteBook.active ? 1 : 0;
+				patch.activeAt = Number(remoteBook.activeAt) || 0;
 			}
 			if (Object.keys(patch).length) {
 				await updateBook(exist.id, patch);
-				booksApplied++;
+				Object.assign(exist, patch);
+				booksUpdated++;
 			}
+			// 索引指向这条已有记录：远端键与本地键可能写法不同（作者缺失/写法差异），
+			// 把「归一化前 / 归一化后 / 远端原键」都登记一遍，
+			// 保证同轮次内的进度与书签无论用哪个键都能命中同一条记录
+			byKey.set(rb.key, exist);
+			byKey.set(keyBefore, exist);
+			byKey.set(bookIdentityKey(exist), exist);
+			continue;
 		}
+
+		const created = normalizeBookFields({
+			id: `b_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+			title: remoteBook.title || '',
+			author: remoteBook.author || '',
+			coverStyle: remoteBook.coverStyle || '',
+			sourceId: remoteBook.sourceId || '',
+			sourceName: remoteBook.sourceName || '',
+			bookUrl: remoteBook.bookUrl || '',
+			tocUrl: remoteBook.tocUrl || '',
+			totalChapters: remoteBook.totalChapters || 0,
+			readChapters: remoteBook.readChapters || 0,
+			cachedChapters: 0,
+			addedAt: remoteBook.addedAt || Date.now(),
+			lastReadAt: remoteBook.lastReadAt || 0,
+			active: remoteBook.active ? 1 : 0,
+			activeAt: remoteBook.activeAt || 0
+		});
+		// addBook 是统一写入闸门：若库中已存在同身份记录，它会返回那条已有记录
+		// （__merged），此时必须沿用它来登记索引，否则后续进度/书签会挂到不存在的 id
+		const saved = await addBook(created);
+		if (saved?.__merged) booksUpdated++;
+		else booksAdded++;
+		// 立即入索引：同轮次内后续条目/进度/书签都能匹配到这条记录
+		byId.set(saved.id, saved);
+		byKey.set(rb.key, saved);
+		byKey.set(bookIdentityKey(saved), saved);
 	}
+	booksApplied = booksAdded + booksUpdated;
 	if (booksApplied) {
 		books = await getBooks();
-		byKey = new Map(books.map((b) => [bookKeyOf(b), b]));
 	}
+	// 进度/书签的键可能来自另一台设备（作者写法不同、书源 id 大小写不同），
+	// 因此在「键 → 本地记录」之外再建一张「书名+书源 → 记录」的降级索引，
+	// 保证远端进度不会因为键的写法差异而落空、更不会另建一本书来承接它。
+	const byTitleSource = new Map();
+	for (const b of books) {
+		byKey.set(bookKeyOf(b), b);
+		const ts = bookTitleSourceKey(normalizeBookFields(b));
+		if (!byTitleSource.has(ts)) byTitleSource.set(ts, b);
+	}
+	const resolveBook = (key) => {
+		const direct = byKey.get(key);
+		if (direct) return direct;
+		return byTitleSource.get(bookTitleSourceKey(normalizeBookFields({ key }))) || null;
+	};
 
+	const tocCache = new Map();
 	for (const [key, mp] of Object.entries(merged.progress || {})) {
-		const book = byKey.get(key);
+		const book = resolveBook(key);
 		if (!book) continue;
 		const lp = local.progress?.[key];
+		// 先按本机目录校正（标题对齐 / 越界收敛），再判断"是否更远"——
+		// 否则目录漂移的远端序号可能虚高，把本机更远的进度覆盖成错位位置
+		const adjusted = await alignProgressToLocalToc(mp, book, tocCache);
 		// 最远优先：只在"远端读得更远"时跟进；本地更远或完全相同时保持本地不动（不会倒退）
-		if (lp && !isFurther(mp, lp)) continue;
+		if (lp && !isFurther(adjusted, lp)) continue;
 		await saveProgress({
 			bookId: book.id,
-			anchor: mp.anchor || null,
-			chapterIdx: mp.chapterIdx ?? 0,
-			chapterTitle: mp.chapterTitle || '',
-			pageIdx: mp.pageIdx ?? 0,
-			scrollTop: mp.scrollTop ?? 0,
-			mode: mp.mode || 'page',
-			updatedAt: Number(mp.updatedAt) || Date.now()
+			anchor: adjusted.anchor || null,
+			chapterIdx: adjusted.chapterIdx ?? 0,
+			chapterTitle: adjusted.chapterTitle || '',
+			pageIdx: adjusted.pageIdx ?? 0,
+			scrollTop: adjusted.scrollTop ?? 0,
+			mode: adjusted.mode || 'page',
+			updatedAt: Number(adjusted.updatedAt) || Date.now()
 		});
 		progressApplied++;
 	}
 
 	const existing = await getAllBookmarks();
 	const exIds = new Set(existing.map((m) => m.id));
-	for (const bm of merged.bookmarks || []) {
-		const book = byKey.get(bm.key);
+	for (const raw of merged.bookmarks || []) {
+		const book = resolveBook(raw.key);
 		if (!book) continue;
+		// 书签也按标题对齐到本机目录，避免目录漂移后书签跳到别的章
+		let toc = tocCache.get(book.id);
+		if (toc === undefined) {
+			try { toc = (await getToc(book.id)) || []; } catch { toc = []; }
+			tocCache.set(book.id, toc);
+		}
+		const bm = alignBookmarkToLocalToc(raw, toc);
 		const a = bm.anchor || {};
 		const localId = `${book.id}:${a.chapterIdx ?? 0}:${a.paragraphIdx ?? 0}:${a.charOffset ?? 0}`;
 		if (exIds.has(localId)) continue;
@@ -494,7 +678,15 @@ async function applySnapshotToLocal(merged, local) {
 	}
 	saveRemoteReadingMap(dateMap);
 
-	return { books: booksApplied, progress: progressApplied, bookmarks: bookmarksApplied };
+	// reconciled：本轮整理掉的存量重复记录数（供同步结果提示与回归测试断言）
+	return {
+		books: booksApplied,
+		progress: progressApplied,
+		bookmarks: bookmarksApplied,
+		reconciled,
+		booksAdded,
+		booksUpdated
+	};
 }
 
 // ============================================================
@@ -593,17 +785,22 @@ async function doSyncNow() {
 	// 4. 应用"更远/更新"的条目到本地
 	const applied = await applySnapshotToLocal(merged, local);
 
+	// 存量清理已包含在 applySnapshotToLocal 的最前面（拉取远端时就会被合并），
+	// 这里只把结果透传给 UI 提示
+	const reconciled = applied.reconciled || 0;
+
 	// 5. 推回远端：本地快照无变化时跳过上传（省一次网络往返——提速的关键）
 	if (fp === cfg.lastPushFp && remote) {
 		const parts = [];
 		if (applied.books) parts.push(`书架 +${applied.books}`);
 		if (applied.progress) parts.push(`进度 ${applied.progress}`);
 		if (applied.bookmarks) parts.push(`书签 +${applied.bookmarks}`);
+		if (reconciled) parts.push(`合并重复 ${reconciled}`);
 		saveSyncConfig({
 			lastSyncAt: Date.now(),
 			lastResult: parts.length ? `已拉取：${parts.join(' · ')}` : '已是最新'
 		});
-		return { applied };
+		return { applied, reconciled };
 	}
 
 	merged.updatedAt = Date.now();
@@ -622,12 +819,13 @@ async function doSyncNow() {
 	if (applied.books) parts.push(`书架 +${applied.books}`);
 	if (applied.progress) parts.push(`进度 ${applied.progress}`);
 	if (applied.bookmarks) parts.push(`书签 +${applied.bookmarks}`);
+	if (reconciled) parts.push(`合并重复 ${reconciled}`);
 	saveSyncConfig({
 		lastSyncAt: Date.now(),
 		lastResult: parts.length ? `已同步：${parts.join(' · ')}` : '已上传',
 		lastPushFp: fp
 	});
-	return { applied };
+	return { applied, reconciled };
 }
 
 /** 有未同步的阅读变化时置位；切后台/回前台时立即冲刷 */

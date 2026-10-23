@@ -10,6 +10,7 @@ import { getChapter, saveChapters, getToc, saveToc, saveProgress, updateBook, co
 import { loadSettings, saveSettings, addReadingSeconds, getLimitStateWithExtra, grantExtraMinutes, fmtDuration, updateReadingSpeed, estimateMinutes } from '../store/stats.js';
 import { keepAwake } from '../store/wakelock.js';
 import { refreshBookToc } from '../store/toc-refresh.js';
+import { openSourceSwitcher } from './source-switch.js';
 import { scheduleSyncAfterRead } from '../store/sync.js';
 import { icon, toast, showSheet, showDialog } from './kit.js';
 import { escapeHtml } from './library.js';
@@ -1298,6 +1299,28 @@ function showMore() {
 				el.innerHTML = `<span class="setting-label">${escapeHtml(r.label)}</span><span class="setting-value">${escapeHtml(r.hint)}</span>`;
 				body.appendChild(el);
 			});
+			// 换源入口：用户读到一半发现当前源缺章/乱码/停更时，
+			// 不必退回书架长按（而且书架里只有一个来源时根本没有换源入口）
+			if (S.book.sourceId !== 'local') {
+				const switchBtn = document.createElement('button');
+				switchBtn.className = 'btn btn-soft btn-block';
+				switchBtn.style.marginTop = '16px';
+				switchBtn.innerHTML = `${icon('list', 18)} 换源`;
+				switchBtn.onclick = () => {
+					close();
+					openSourceSwitcher({
+						book: S.book,
+						app: S.app,
+						getPosition: () => ({
+							chapterIdx: S.visibleIdx,
+							anchor: getReadingAnchor(),
+							chapterTitle: S.toc?.[S.visibleIdx]?.title || ''
+						})
+					});
+				};
+				body.appendChild(switchBtn);
+			}
+
 			const copyBtn = document.createElement('button');
 			copyBtn.className = 'btn btn-soft btn-block';
 			copyBtn.style.marginTop = '16px';

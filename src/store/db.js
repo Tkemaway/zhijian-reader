@@ -6,6 +6,8 @@
  * progress: 阅读进度
  */
 
+import { normalizeBookFields, dedupeBooks, findSameBookRecord } from './book-identity.js';
+
 const DB_NAME = 'zhijian';
 const DB_VERSION = 2;
 
@@ -63,12 +65,45 @@ function reqValue(request) {
 
 // ---------- 书籍 ----------
 
+/**
+ * 新增书籍（**唯一写入闸门**）。
+ *
+ * 两件事：
+ *  1. 统一身份字段（书名/作者/书源的归一化）——所有入架路径
+ *     （搜索入架 / 本地导入 / 同步拉取 / 换源新建）都经过这里，
+ *     保证任何地方算出的身份键口径一致，不会因写法差异被当成两本书。
+ *  2. 同身份去重——若书架上已有「同一本 + 同一书源」的记录（含键写法不同、
+ *     历史上被复制出来的重复），则把新书并入那条已有记录，**不再新建**。
+ *     这是「检查更新后书架多出一本」这类问题的最后一道防线：
+ *     即使某个调用方忘了查重，也不会产生重复。
+ *
+ * @returns {Promise<object>} 实际落库的记录（复用已有记录时返回那条记录，
+ *   调用方必须使用其 id 继续写目录/章节，否则会挂到不存在的 id 上）
+ */
 export async function addBook(book) {
 	const db = await openDb();
+	const record = normalizeBookFields(book);
+
+	// 已有同身份记录 → 合并进它（不新增）
+	const existing = findSameBookRecord(record, await getBooks());
+	if (existing && existing.id !== record.id) {
+		const patch = {};
+		if (!existing.coverStyle && record.coverStyle) patch.coverStyle = record.coverStyle;
+		if ((record.totalChapters || 0) > (existing.totalChapters || 0)) patch.totalChapters = record.totalChapters;
+		if ((record.readChapters || 0) > (existing.readChapters || 0)) patch.readChapters = record.readChapters;
+		if ((record.lastReadAt || 0) > (existing.lastReadAt || 0)) patch.lastReadAt = record.lastReadAt;
+		if (!existing.tocUrl && record.tocUrl) patch.tocUrl = record.tocUrl;
+		if (!existing.bookUrl && record.bookUrl) patch.bookUrl = record.bookUrl;
+		if (!existing.author && record.author) patch.author = record.author;
+		if (!existing.sourceName && record.sourceName) patch.sourceName = record.sourceName;
+		if (Object.keys(patch).length) await updateBook(existing.id, patch);
+		return { ...existing, ...patch, __merged: true };
+	}
+
 	return new Promise((resolve, reject) => {
 		const t = db.transaction('books', 'readwrite');
-		t.objectStore('books').put(book);
-		t.oncomplete = () => resolve(book);
+		t.objectStore('books').put(record);
+		t.oncomplete = () => resolve(record);
 		t.onerror = () => reject(t.error);
 	});
 }
@@ -78,11 +113,26 @@ export async function getBooks() {
 	return reqValue(db.transaction('books').objectStore('books').getAll());
 }
 
+/**
+ * 书架记录 + 去重后的结果（只读，不写库）。
+ * 用于「同一身份+同一书源」出现多条历史重复时，界面只呈现一条——
+ * 真正的合并由 reconcile.js 在同步时落库。
+ */
+export async function getBooksDeduped() {
+	const { books } = dedupeBooks(await getBooks());
+	return books;
+}
+
 export async function getBook(id) {
 	const db = await openDb();
 	return reqValue(db.transaction('books').objectStore('books').get(id));
 }
 
+/**
+ * 更新书籍记录。
+ * - 找不到该 id 时 resolve(null)，调用方需要据此判断（旧实现静默什么都不做）
+ * - 若 patch 改了书名/作者/书源，会重新走身份归一化，避免更新后键漂移
+ */
 export async function updateBook(id, patch) {
 	const db = await openDb();
 	return new Promise((resolve, reject) => {
@@ -91,7 +141,9 @@ export async function updateBook(id, patch) {
 		let next = null;
 		store.get(id).onsuccess = (event) => {
 			if (!event.target.result) return;
-			next = { ...event.target.result, ...patch, updatedAt: Date.now() };
+			const touchesIdentity = patch && ('title' in patch || 'author' in patch || 'sourceId' in patch);
+			const merged = { ...event.target.result, ...patch, updatedAt: Date.now() };
+			next = touchesIdentity ? normalizeBookFields(merged) : merged;
 			store.put(next);
 		};
 		t.oncomplete = () => resolve(next);
