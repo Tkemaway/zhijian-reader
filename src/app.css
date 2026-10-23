@@ -614,134 +614,283 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 }
 body.ink-mode .bc-badge { display: none; }
 
-/* ---------- 立体书架（v3）---------- */
-/* 书柜 + 整排木质层板：卡片按当前宽度分行，每行一条连续木板，
-   封面侧立、投影落在层板上，按下时像被"抽出来" */
-.bookcase {
-	margin-top: 14px;
-	padding: 14px 14px 6px;
-	border-radius: 18px;
-	background:
-		repeating-linear-gradient(90deg, rgba(120, 86, 48, 0.035) 0 2px, transparent 2px 7px),
-		linear-gradient(180deg, #f7eddd 0%, #efe2cd 55%, #e8d8bf 100%);
-	box-shadow:
-		inset 0 2px 8px rgba(90, 66, 34, 0.1),
-		0 10px 28px rgba(60, 44, 22, 0.08);
+/* ---------- 立体书架（v3.1：书脊轮播）---------- */
+/* 参考 Wenku8 Flutter 的立体书架：书脊朝外、透视纵深，
+   选中的书抽出并转向正面；上方编号分栏、下方页码与信息区 */
+#shelf-stage {
+	margin-top: 8px;
+	padding: 8px 6px 0;
+	background-image:
+		linear-gradient(rgba(140, 120, 90, 0.055) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(140, 120, 90, 0.055) 1px, transparent 1px);
+	background-size: 26px 26px;
+	border-radius: 12px;
+	overflow: hidden;
+	transition: opacity 0.2s var(--ease);
 }
-.shelf-row {
+.shelf-head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 2px 2px 0;
+}
+.shelf-eyebrow {
+	font-size: 10px;
+	letter-spacing: 0.2em;
+	color: var(--ink-3);
+	white-space: nowrap;
+}
+.shelf-line { flex: 1; height: 1px; background: var(--line); }
+.shelf-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--ink-3); }
+.shelf-total { font-size: 10px; letter-spacing: 0.12em; color: var(--ink-3); white-space: nowrap; }
+.spine-stage {
 	position: relative;
+	height: 268px;
 	display: flex;
 	align-items: flex-end;
-	gap: 14px;
-	padding: 6px 2px 12px;
-	margin-bottom: 16px;
+	justify-content: center;
+	perspective: 1500px;
+	perspective-origin: 50% 88%;
 }
-/* 整排层板（延伸到卡片间隙与两侧） */
-.shelf-row::after {
+/* 地面投影 */
+.spine-stage::after {
 	content: '';
 	position: absolute;
-	left: -6px; right: -6px;
-	bottom: 47px;
-	height: 11px;
-	border-radius: 3px;
-	background: linear-gradient(180deg, #d5b589 0%, #bd9766 55%, #9d7749 100%);
-	box-shadow:
-		0 6px 10px rgba(70, 50, 25, 0.24),
-		inset 0 1px 0 rgba(255, 255, 255, 0.5);
-	z-index: 0;
+	left: 50%;
+	bottom: 2px;
+	transform: translateX(-50%);
+	width: 72%;
+	height: 24px;
+	border-radius: 50%;
+	background: radial-gradient(ellipse at center, rgba(40, 30, 15, 0.14), transparent 70%);
+	filter: blur(2px);
+	pointer-events: none;
 }
-.shelf-row .book-card {
-	flex: 0 0 calc((100% - (var(--cols, 3) - 1) * 14px) / var(--cols, 3));
-	min-width: 0;
+.spine-row {
+	display: flex;
+	align-items: flex-end;
+	gap: 3px;
+	transform-style: preserve-3d;
+	padding-bottom: 14px;
+}
+/* 单本书的书脊 */
+.spine {
+	--d: 0;
+	--absd: 0;
 	position: relative;
-	z-index: 1;
-}
-/* 层板下的书名/进度像小铭牌 */
-.shelf-row .bc-meta { height: 38px; overflow: hidden; }
-.bookcase .bc-plank { display: none; }
-.shelf-empty { font-size: 12.5px; color: var(--ink-3); text-align: center; padding: 28px 0 34px; }
-.book-card { gap: 10px; }
-.book-card:active { transform: none; }
-.bc-stack { position: relative; }
-.bc-cover {
-	border-radius: 3px 10px 10px 3px;
-	transform: rotateY(-5deg);
-	transform-origin: left center;
+	width: 30px;
+	height: 202px;
+	border: none;
+	padding: 7px 0 6px;
+	border-radius: 2px 3px 1px 2px;
+	background: var(--cover-bg, linear-gradient(180deg, #6d5c46, #4a3a28));
+	color: rgba(255, 255, 255, 0.92);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: space-between;
 	box-shadow:
-		0 12px 20px -10px rgba(40, 30, 15, 0.42),
-		0 2px 4px rgba(30, 22, 10, 0.1);
-	transition: transform 0.28s var(--ease), box-shadow 0.28s var(--ease);
+		inset -7px 0 10px rgba(0, 0, 0, 0.24),
+		inset 2px 0 0 rgba(255, 255, 255, 0.18),
+		0 10px 14px -8px rgba(0, 0, 0, 0.36);
+	transform: rotateY(calc(var(--d) * -7deg)) translateZ(calc(var(--absd) * -16px)) translateY(calc(var(--absd) * 4px));
+	transform-style: preserve-3d;
+	transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), width 0.45s, height 0.45s;
+	cursor: pointer;
+	overflow: visible;
 }
-/* 书脊压痕 */
-.bc-cover::after {
-	left: 5px;
+.spine-slot {
+	flex: 0 0 30px;
+	width: 30px;
+	opacity: 0;
+	pointer-events: none;
+}
+.spine.is-active {
+	width: 34px;
+	height: 212px;
+	z-index: 40;
+	transform: rotateY(-3deg) translateZ(12px);
+}
+.spine-num {
+	font-size: 7.5px;
+	letter-spacing: 0.06em;
+	opacity: 0.55;
+	white-space: nowrap;
+}
+.spine-title {
+	writing-mode: vertical-rl;
+	font-family: var(--font-reading);
+	font-size: 11.5px;
+	letter-spacing: 0.08em;
+	line-height: 1.28;
+	max-height: 140px;
+	overflow: hidden;
+}
+.spine-author {
+	writing-mode: vertical-rl;
+	font-size: 8.5px;
+	opacity: 0.58;
+	max-height: 52px;
+	overflow: hidden;
+}
+/* 抽出的封面 */
+.spine-cover {
+	position: absolute;
+	left: 50%;
+	bottom: 10px;
+	width: 152px;
+	height: 220px;
+	transform: translateX(-50%) rotateY(-13deg);
+	transform-origin: center bottom;
+	border-radius: 3px 9px 9px 3px;
+	box-shadow:
+		18px 26px 40px -18px rgba(30, 22, 10, 0.5),
+		0 2px 5px rgba(0, 0, 0, 0.14);
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	padding: 14px 12px 12px;
+	animation: cover-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+	pointer-events: none;
+}
+.spine-cover::after {
+	content: '';
+	position: absolute;
+	left: 5px; top: 0; bottom: 0;
 	width: 3px;
-	background: linear-gradient(90deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.05));
+	background: linear-gradient(90deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.04));
 	box-shadow: 1px 0 0 rgba(0, 0, 0, 0.12);
 }
-/* 搁板 */
-.bc-plank {
-	position: absolute;
-	left: -9px; right: -9px;
-	bottom: -5px;
-	height: 7px;
-	border-radius: 2px;
-	background: linear-gradient(180deg, #e8dbc5 0%, #d7c5a6 52%, #c0aa88 100%);
-	box-shadow:
-		0 3px 6px rgba(70, 50, 25, 0.2),
-		inset 0 1px 0 rgba(255, 255, 255, 0.62);
-	z-index: 1;
+@keyframes cover-pop {
+	from { opacity: 0; transform: translateX(-50%) rotateY(-26deg) translateY(6px); }
+	to { opacity: 1; transform: translateX(-50%) rotateY(-13deg); }
 }
-/* 书与搁板的接触阴影 */
-.bc-plank::before {
-	content: '';
-	position: absolute;
-	left: 6px; right: 6px;
-	top: -9px; height: 9px;
-	background: linear-gradient(180deg, rgba(60, 44, 22, 0), rgba(60, 44, 22, 0.15));
-	border-radius: 50% / 100% 100% 0 0;
-}
-/* 按下 / 选中：书被抽出 */
-.book-card:active .bc-cover,
-.book-card.selected .bc-cover {
-	transform: translateY(-9px) scale(1.03) rotateY(0deg);
-	box-shadow:
-		0 22px 30px -14px rgba(30, 22, 10, 0.48),
-		0 3px 6px rgba(30, 22, 10, 0.12);
-}
-.book-card.selected .bc-cover { outline: 2px solid var(--accent); outline-offset: -2px; }
-.bc-check {
-	position: absolute;
-	top: 7px; right: 7px;
-	width: 22px; height: 22px;
-	border-radius: 50%;
-	display: flex; align-items: center; justify-content: center;
-	background: var(--accent);
+.sc-title {
+	writing-mode: vertical-rl;
+	font-family: var(--font-reading);
+	font-size: 16px;
+	font-weight: 650;
+	letter-spacing: 0.1em;
+	line-height: 1.3;
+	max-height: 150px;
+	overflow: hidden;
 	color: #fff;
-	opacity: 0;
-	transform: scale(0.6);
-	transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
-	z-index: 3;
+	text-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
 }
-.book-card.selected .bc-check { opacity: 1; transform: scale(1); }
-/* 墨水屏：去掉立体与木纹，保持纸面干净 */
-body.ink-mode .bc-plank { display: none; }
-body.ink-mode .bookcase {
-	background: none;
-	box-shadow: none;
-	padding: 0;
+.sc-bottom {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 6px;
+}
+.sc-author { font-size: 9.5px; color: rgba(255, 255, 255, 0.72); }
+.sc-badge {
+	font-size: 9px;
+	padding: 3px 7px;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.28);
+	color: rgba(255, 255, 255, 0.9);
+	letter-spacing: 0.04em;
+}
+/* 页码 */
+.shelf-pager {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	padding: 2px 4px 6px;
+}
+.pager-btn {
+	width: 30px;
+	height: 30px;
+	border: none;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--ink-2);
+	font-size: 17px;
+	line-height: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: background 0.2s var(--ease);
+}
+.pager-btn:active { background: var(--elev-2); }
+.pager-btn:disabled { opacity: 0.22; }
+.pager-text { font-size: 11px; letter-spacing: 0.14em; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pager-text i { font-style: normal; opacity: 0.35; margin: 0 3px; }
+
+/* 选中书信息（参考原项目：大标题 + 元信息 + 主按钮） */
+#shelf-info {
+	padding: 16px 4px 2px;
+	border-top: 1px solid var(--line);
 	margin-top: 10px;
 }
-body.ink-mode .shelf-row::after { display: none; }
-body.ink-mode .shelf-row { padding-bottom: 6px; margin-bottom: 12px; }
-body.ink-mode .bc-cover {
+.shelf-info-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+}
+.shelf-info-title {
+	font-family: var(--font-reading);
+	font-size: 21px;
+	font-weight: 720;
+	letter-spacing: -0.01em;
+	line-height: 1.35;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.shelf-info-sub {
+	font-size: 12px;
+	color: var(--ink-3);
+	margin-top: 6px;
+	letter-spacing: 0.02em;
+}
+.shelf-more {
+	border: none;
+	background: transparent;
+	color: var(--ink-3);
+	font-size: 22px;
+	line-height: 1;
+	padding: 2px 8px;
+	border-radius: 8px;
+	flex-shrink: 0;
+}
+.shelf-more:active { background: var(--elev-2); }
+
+/* 管理视图：干净的封面网格（不参与书架展示） */
+.manage-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+	gap: 18px 14px;
+	margin-top: 14px;
+	padding-bottom: 24px;
+}
+.manage-grid .book-card { gap: 8px; }
+.manage-grid .bc-plank { display: none; }
+.manage-grid .bc-cover {
 	transform: none;
-	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+	border-radius: 4px 10px 10px 4px;
+	box-shadow: 0 8px 18px -10px rgba(40, 30, 15, 0.4);
 }
-body.ink-mode .book-card:active .bc-cover,
-body.ink-mode .book-card.selected .bc-cover {
-	transform: translateY(-4px);
+.manage-grid .book-card.selected .bc-cover,
+.manage-grid .book-card:active .bc-cover {
+	transform: translateY(-5px);
+	box-shadow: 0 14px 24px -12px rgba(30, 22, 10, 0.45);
 }
+.manage-grid .bc-meta { height: auto; }
+
+/* 墨水屏：去掉网格底纹与投影 */
+body.ink-mode #shelf-stage {
+	background-image: none;
+}
+body.ink-mode .spine-stage::after { display: none; }
+body.ink-mode .spine {
+	box-shadow: none;
+	border: 0.5px solid var(--line);
+}
+body.ink-mode .spine-cover { box-shadow: none; border: 0.5px solid var(--line); }
 
 /* ---------- 书架多选操作栏 ---------- */
 .sel-bar {
