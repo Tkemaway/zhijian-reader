@@ -35,7 +35,6 @@ export function loadFileSyncConfig() {
 
 export function saveFileSyncConfig(patch) {
 	const next = { ...loadFileSyncConfig(), ...patch };
-	_dirsReady = false; // 配置变了 → 目录探测重来
 	try { localStorage.setItem(CFG_KEY, JSON.stringify(next)); } catch { /* ignore */ }
 	return next;
 }
@@ -84,9 +83,14 @@ function safeFileName(name) {
 	return `${base}${ext}`;
 }
 
-/** 云端文件名：内容哈希前 16 位 + 原名（同名同内容天然去重） */
+/**
+ * 云端文件名：zhijian- 前缀 + 内容哈希前 16 位 + 原名。
+ * 统一放在 WebDAV 根目录而不是子目录：Android 的 HttpURLConnection 不接受
+ * MKCOL / PROPFIND 这类非标准方法（会抛 ProtocolException），建目录不可靠；
+ * 用前缀命名既不建目录、又能把所有书归在一起，同名同内容天然去重。
+ */
 export function remoteNameFor(hash, fileName) {
-	return `${String(hash || '').slice(0, 16)}-${safeFileName(fileName)}`;
+	return `zhijian-${String(hash || '').slice(0, 16)}-${safeFileName(fileName)}`;
 }
 
 // ---------- WebDAV 客户端 ----------
@@ -113,38 +117,37 @@ async function davRequest(cfg, method, path, { body = null, headers = {} } = {})
 	});
 }
 
-let _dirsReady = false;
-async function ensureDirs(cfg) {
-	if (_dirsReady) return;
-	for (const dir of ['zhijian', 'zhijian/books']) {
-		try { await davRequest(cfg, 'MKCOL', dir); } catch { /* 已存在(405)/权限受限都不阻断，PUT 会给出真实错误 */ }
-	}
-	_dirsReady = true;
-}
-
 async function davPut(cfg, name, bytes) {
-	const r = await davRequest(cfg, 'PUT', `zhijian/books/${name}`, {
+	const r = await davRequest(cfg, 'PUT', name, {
 		body: bytes,
 		headers: { 'Content-Type': 'application/octet-stream' }
 	});
+	if (r.status === 401) throw new Error('账号或密码不正确');
+	if (r.status === 403) throw new Error('网盘无写入权限');
 	if (r.status && (r.status < 200 || r.status >= 300)) throw new Error(`上传失败（HTTP ${r.status}）`);
 }
 
-/** 测试连接：建目录 + PROPFIND，区分鉴权失败与网络错误 */
+/**
+ * 测试连接：PUT 一个探针文件再删除（只用标准方法，Android 全兼容）。
+ * 能区分「账号密码错」与「网络/服务不可达」。
+ */
 export async function testFileSyncConnection() {
 	const cfg = loadFileSyncConfig();
 	if (!cfg.url || !cfg.user || !cfg.pass) throw new Error('请先填写地址、账号和密码');
-	_dirsReady = false;
-	await ensureDirs(cfg);
-	const r = await davRequest(cfg, 'PROPFIND', 'zhijian/books', { headers: { Depth: '0' } });
+	const probe = `zhijian-probe-${Date.now()}.txt`;
+	const r = await davRequest(cfg, 'PUT', probe, {
+		body: new TextEncoder().encode('zhijian webdav probe'),
+		headers: { 'Content-Type': 'text/plain' }
+	});
 	if (r.status === 401) throw new Error('账号或密码不正确（坚果云需使用「应用密码」）');
 	if (r.status === 403) throw new Error('账号无写入权限');
-	if (r.status >= 400 && r.status !== 405) throw new Error(`连接失败（HTTP ${r.status}）`);
+	if (r.status >= 400) throw new Error(`连接失败（HTTP ${r.status}）`);
+	await davRequest(cfg, 'DELETE', probe).catch(() => { /* 清理失败不影响结论 */ });
 	return true;
 }
 
 async function davGet(cfg, name) {
-	const r = await davRequest(cfg, 'GET', `zhijian/books/${name}`);
+	const r = await davRequest(cfg, 'GET', name);
 	if (r.status === 404) throw new Error('云端没有这个文件');
 	if (r.status && r.status >= 400) throw new Error(`下载失败（HTTP ${r.status}）`);
 	return r.bytes || new Uint8Array(0);
@@ -223,7 +226,6 @@ export async function uploadLocalBookFile(book, { force = false } = {}) {
 	if (!force && book.fileUploadedAt) return true;
 	const rec = await getBookFile(book.fileHash);
 	if (!rec) return false;
-	await ensureDirs(cfg);
 	const name = book.fileRemoteName || remoteNameFor(book.fileHash, book.fileName || book.title);
 	await davPut(cfg, name, new Uint8Array(rec.bytes));
 	await updateBook(book.id, { fileUploadedAt: Date.now(), fileRemoteName: name });
@@ -238,7 +240,6 @@ export async function uploadAllPending({ onProgress } = {}) {
 	const pending = locals.filter((b) => !b.fileUploadedAt);
 	let uploaded = 0;
 	let failed = 0;
-	if (pending.length) await ensureDirs(cfg);
 	for (const b of pending) {
 		try {
 			onProgress?.(`正在上传《${b.title}》`, uploaded, pending.length);

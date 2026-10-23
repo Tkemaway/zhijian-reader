@@ -64,7 +64,7 @@ console.log('== 1. 哈希与云端文件命名 ==');
 	const h2 = await files.sha256Hex(new TextEncoder().encode('hello world'));
 	check('同内容哈希稳定', h === h2);
 	const name = files.remoteNameFor('abcdef1234567890ffff', '斗破苍穹 第1卷.epub');
-	check('文件名保留中文与扩展名、空格转下划线', name === 'abcdef1234567890-斗破苍穹_第1卷.epub', name);
+	check('文件名保留中文与扩展名、空格转下划线', name === 'zhijian-abcdef1234567890-斗破苍穹_第1卷.epub', name);
 	const name2 = files.remoteNameFor('abcdef1234567890ffff', '无扩展名');
 	check('缺扩展名时补 .epub', name2.endsWith('.epub'), name2);
 }
