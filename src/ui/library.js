@@ -9,6 +9,7 @@ import { bookTitleAuthorKey } from '../store/book-identity.js';
 import { getLimitStateWithExtra, fmtDuration, getTodaySeconds } from '../store/stats.js';
 import { icon, toast, showDialog, showSheet, coverGradient } from './kit.js';
 import { openSourceSwitcher } from './source-switch.js';
+import { rememberImportedFile, uploadLocalBookFile, isFileSyncEnabled } from '../store/book-files.js';
 import { parseBookFile } from '../core/importer.js';
 
 export async function renderLibrary(container, app) {
@@ -18,11 +19,20 @@ export async function renderLibrary(container, app) {
 				<div class="page-title">书架</div>
 				<div class="page-subtitle">纸上千言，心间一寸</div>
 			</div>
-			<button class="btn btn-soft btn-sm" id="import-btn" style="margin-bottom:8px">导入本地书</button>
+			<div style="display:flex;gap:8px;margin-bottom:8px">
+				<button class="btn btn-soft btn-sm" id="manage-btn">管理</button>
+				<button class="btn btn-soft btn-sm" id="import-btn">导入本地书</button>
+			</div>
 		</div>
 		<div id="read-status"></div>
 		<div id="continue-zone"></div>
 		<div id="books-zone"><div class="skeleton" style="height:180px;margin-top:16px"></div></div>
+		<div class="sel-bar" id="sel-bar">
+			<span class="sel-count" id="sel-count">已选 0 本</span>
+			<button class="btn btn-soft btn-sm" id="sel-all">全选</button>
+			<button class="btn btn-soft btn-sm" id="sel-del" style="color:var(--danger)">删除</button>
+			<button class="btn btn-primary btn-sm" id="sel-done">完成</button>
+		</div>
 	`;
 
 	// 导入本地书（TXT / EPUB）
@@ -83,8 +93,9 @@ export async function renderLibrary(container, app) {
 
 	const grid = document.createElement('div');
 	grid.className = 'book-grid';
+	const selState = { active: false };
 	cards.forEach((book, i) => {
-		const card = bookCard(book, app, groups.get(groupKeyOf(book)));
+		const card = bookCard(book, app, groups.get(groupKeyOf(book)), selState);
 		// 逐项优雅进场（封顶延迟，避免长列表等待）
 		card.classList.add('stagger-item');
 		card.style.animationDelay = `${Math.min(i, 11) * 36}ms`;
@@ -92,6 +103,84 @@ export async function renderLibrary(container, app) {
 	});
 	zone.innerHTML = '';
 	zone.appendChild(grid);
+
+	bindSelection(container, grid, selState, app);
+}
+
+/**
+ * 书架多选：点「管理」进入；按下并滑动可以连续选中/取消（像整理真实书架）。
+ * 未进入多选时保持原交互：点开书、长按菜单。
+ */
+function bindSelection(container, grid, selState, app) {
+	const selBar = container.querySelector('#sel-bar');
+	const selCount = container.querySelector('#sel-count');
+	const manageBtn = container.querySelector('#manage-btn');
+	const selSet = new Set();
+
+	const update = () => { selCount.textContent = `已选 ${selSet.size} 本`; };
+	const apply = (card, on) => {
+		const id = card?.dataset?.bookId;
+		if (!id) return;
+		if (on) { selSet.add(id); card.classList.add('selected'); }
+		else { selSet.delete(id); card.classList.remove('selected'); }
+		update();
+	};
+	const enter = () => {
+		selState.active = true;
+		selBar.classList.add('show');
+		manageBtn.textContent = '取消';
+	};
+	const exit = () => {
+		selState.active = false;
+		selSet.clear();
+		selBar.classList.remove('show');
+		manageBtn.textContent = '管理';
+		grid.querySelectorAll('.book-card.selected').forEach((c) => c.classList.remove('selected'));
+		update();
+	};
+
+	manageBtn.addEventListener('click', () => (selState.active ? exit() : enter()));
+	container.querySelector('#sel-done').addEventListener('click', exit);
+	container.querySelector('#sel-all').addEventListener('click', () => {
+		grid.querySelectorAll('.book-card').forEach((c) => apply(c, true));
+	});
+	container.querySelector('#sel-del').addEventListener('click', async () => {
+		const ids = [...selSet];
+		if (!ids.length) { toast('先选中要删除的书', 1600); return; }
+		const ok = await showDialog({
+			title: '删除书籍',
+			text: `确定删除选中的 ${ids.length} 本书吗？目录、进度与缓存会一并删除。`,
+			actions: [
+				{ label: '删除', kind: 'danger', value: 1 },
+				{ label: '取消', kind: 'soft', value: 0 }
+			]
+		});
+		if (ok !== 1) return;
+		for (const id of ids) {
+			try { await deleteBook(id); } catch { /* 跳过失败项 */ }
+		}
+		toast(`已删除 ${ids.length} 本`, 1800);
+		exit();
+		app.refresh();
+	});
+
+	// 滑动连选：按下决定"选"还是"取消"，划过的书随之改变
+	let dragging = false;
+	let intent = true;
+	grid.addEventListener('pointerdown', (e) => {
+		if (!selState.active) return;
+		const card = e.target.closest('.book-card');
+		if (!card) return;
+		dragging = true;
+		intent = !card.classList.contains('selected');
+		apply(card, intent);
+		document.addEventListener('pointerup', () => { dragging = false; }, { once: true });
+	});
+	grid.addEventListener('pointermove', (e) => {
+		if (!selState.active || !dragging) return;
+		const card = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.book-card');
+		if (card && grid.contains(card)) apply(card, intent);
+	});
 }
 
 /** 今日阅读状态（防沉迷可视化的轻量入口） */
@@ -171,9 +260,10 @@ function pickActiveVariant(variants) {
 }
 
 /** 书籍卡片（variants：同书名同作者的全部书源；多个时显示角标并标注当前源） */
-function bookCard(book, app, variants = null) {
+function bookCard(book, app, variants = null, selState = null) {
 	const el = document.createElement('div');
 	el.className = 'book-card';
+	el.dataset.bookId = book.id;
 	const multi = !!(variants && variants.length > 1);
 	const pct = book.totalChapters ? Math.min(100, Math.round(((book.readChapters || 0) / book.totalChapters) * 100)) : 0;
 	const subParts = [];
@@ -181,10 +271,14 @@ function bookCard(book, app, variants = null) {
 	if (book.totalChapters) subParts.push(`${book.totalChapters} 章 · ${pct}%`);
 	else if (!subParts.length) subParts.push(escapeHtml(book.sourceName || ''));
 	el.innerHTML = `
-		<div class="bc-cover" style="background:${book.coverStyle || 'linear-gradient(145deg,#3a3a3c,#1c1c1e)'}">
-			<span class="bc-title">${escapeHtml(book.title)}</span>
-			<span class="bc-author">${escapeHtml(book.author || '')}</span>
-			${multi ? `<span class="bc-badge">${variants.length} 个源</span>` : ''}
+		<div class="bc-stack">
+			<div class="bc-cover" style="background:${book.coverStyle || 'linear-gradient(145deg,#3a3a3c,#1c1c1e)'}">
+				<span class="bc-title">${escapeHtml(book.title)}</span>
+				<span class="bc-author">${escapeHtml(book.author || '')}</span>
+				${multi ? `<span class="bc-badge">${variants.length} 个源</span>` : ''}
+				<span class="bc-check">${icon('check', 14)}</span>
+			</div>
+			<div class="bc-plank"></div>
 		</div>
 		<div class="bc-meta">
 			<div class="bc-name">${escapeHtml(book.title)}</div>
@@ -195,11 +289,13 @@ function bookCard(book, app, variants = null) {
 	const openActions = () => showBookActions(book, app, variants);
 	el.addEventListener('click', async () => {
 		if (el.__suppressClick) { el.__suppressClick = false; return; }
+		if (selState?.active) return; // 选择模式下由 pointerdown 处理
 		const progress = await getProgress(book.id);
 		app.go('reader', { book, chapterIdx: progress?.chapterIdx || 0, scrollTop: progress?.scrollTop || 0, pageIdx: progress?.pageIdx || 0, anchor: progress?.anchor || null });
 	});
-	el.addEventListener('contextmenu', (e) => { e.preventDefault(); openActions(); });
+	el.addEventListener('contextmenu', (e) => { e.preventDefault(); if (!selState?.active) openActions(); });
 	el.addEventListener('touchstart', () => {
+		if (selState?.active) return;
 		longPress = setTimeout(() => {
 			el.__suppressClick = true;
 			openActions();
@@ -382,6 +478,16 @@ async function importLocalBook(file, app) {
 
 		if (saved?.__merged) toast(`《${saved.title || book.title}》已在书架，已更新为 ${total} 章`, 2600);
 		else toast(`《${book.title}》已导入 · ${total} 章`, 2600);
+
+		// 记住原始文件（跨设备云同步用）；已开启文件同步时后台自动上传
+		rememberImportedFile({ ...(saved || book), id: realId }, { bytes: buf, fileName: file.name })
+			.then((r) => {
+				if (r && isFileSyncEnabled()) {
+					uploadLocalBookFile({ ...book, ...(saved || {}), id: realId, fileHash: r.hash, fileRemoteName: r.remoteName, fileName: file.name })
+						.catch(() => { /* 上传失败下次同步再试 */ });
+				}
+			})
+			.catch(() => {});
 		app.refresh();
 	} catch (e) {
 		console.error(e);

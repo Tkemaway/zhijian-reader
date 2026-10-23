@@ -5,7 +5,11 @@ import sources from '../core/sources.js';
 import { loadSettings, saveSettings, applyPaperInkPreset, getWeekData, getTodaySeconds, getLimitStateWithExtra, fmtDuration } from '../store/stats.js';
 import { keepAwake } from '../store/wakelock.js';
 import { getBooks } from '../store/db.js';
-import { loadSyncConfig, enableSync, disableSync, syncNow } from '../store/sync.js';
+import { loadSyncConfig, enableSync, disableSync, syncNow, getPendingLocalDownloads } from '../store/sync.js';
+import {
+	loadFileSyncConfig, saveFileSyncConfig, isFileSyncEnabled,
+	uploadAllPending, downloadAndImport, testFileSyncConnection, JIANGUOYUN_DAV
+} from '../store/book-files.js';
 import { icon, toast, showDialog, showSheet, applyInkMode } from './kit.js';
 import { escapeHtml } from './library.js';
 
@@ -373,7 +377,20 @@ function showSyncPanel(container, onChanged) {
 						if (a.books) bits.push(`书架 +${a.books} 本`);
 						if (a.progress) bits.push(`进度 ${a.progress} 条`);
 						if (a.bookmarks) bits.push(`书签 +${a.bookmarks}`);
-						toast(`同步完成${bits.length ? ` · ${bits.join(' · ')}` : ' · 已是最新'}`, 2400);
+						if (r.reconciled) bits.push(`合并重复 ${r.reconciled}`);
+						// 本地书文件：先上传待同步的，再下载云端缺少的
+						if (isFileSyncEnabled()) {
+							syncBtn.textContent = '同步本地书文件…';
+							const up = await uploadAllPending({ onProgress: (m) => { if (syncBtn.isConnected) syncBtn.textContent = m; } });
+							if (up.uploaded) bits.push(`本地书上传 ${up.uploaded} 本`);
+							const pend = getPendingLocalDownloads();
+							if (pend.length) {
+								const down = await downloadAndImport(pend, { onProgress: (m) => { if (syncBtn.isConnected) syncBtn.textContent = m; } });
+								if (down.downloaded) bits.push(`本地书下载 ${down.downloaded} 本`);
+								if (down.failed) bits.push(`下载失败 ${down.failed}`);
+							}
+						}
+						toast(`同步完成${bits.length ? ` · ${bits.join(' · ')}` : ' · 已是最新'}`, 2600);
 						close();
 						onChanged?.();
 					} catch (e) {
@@ -383,6 +400,17 @@ function showSyncPanel(container, onChanged) {
 					}
 				};
 				body.appendChild(syncBtn);
+
+				// 本地书文件同步（WebDAV）
+				const fileBtn = document.createElement('button');
+				fileBtn.className = 'btn btn-soft btn-block';
+				fileBtn.style.marginTop = '10px';
+				fileBtn.innerHTML = `本地书文件同步 · ${isFileSyncEnabled() ? '已开启' : '未配置'}`;
+				fileBtn.onclick = () => {
+					close();
+					showFileSyncPanel(container, onChanged);
+				};
+				body.appendChild(fileBtn);
 
 				const retokenBtn = document.createElement('button');
 				retokenBtn.className = 'btn btn-soft btn-block';
@@ -424,9 +452,136 @@ function showSyncPanel(container, onChanged) {
 	});
 }
 
-/** Token 配置表单（含获取步骤说明） */
-function showTokenForm(container, onChanged) {
+/**
+ * 本地书文件同步（WebDAV）配置面板
+ * 推荐坚果云：免费额度、国内直连快、无需买服务器
+ */
+function showFileSyncPanel(container, onChanged) {
+	const cfg = loadFileSyncConfig();
 	showSheet({
+		title: '本地书文件同步',
+		build: (body, close) => {
+			const hint = document.createElement('p');
+			hint.className = 'setting-hint';
+			hint.style.cssText = 'margin-bottom:12px;line-height:1.75';
+			hint.innerHTML = '把导入的 EPUB / TXT 原文件同步到网盘，另一台设备同步时自动下载导入（阅读进度照常同步）。<br>推荐 <b>坚果云</b>：免费、国内直连快、不需要服务器。<br>密码请用「应用密码」：网页版 → 账户信息 → 安全选项 → 添加应用密码。';
+			body.appendChild(hint);
+
+			const fields = [
+				{ key: 'url', label: '服务器地址', ph: JIANGUOYUN_DAV },
+				{ key: 'user', label: '账号（邮箱）', ph: 'you@example.com' },
+				{ key: 'pass', label: '应用密码', ph: '••••••', type: 'password' }
+			];
+			const inputs = {};
+			for (const f of fields) {
+				const row = document.createElement('div');
+				row.className = 'setting-row';
+				const label = document.createElement('span');
+				label.className = 'setting-label';
+				label.textContent = f.label;
+				const input = document.createElement('input');
+				input.type = f.type || 'text';
+				input.value = cfg[f.key] || (f.key === 'url' ? JIANGUOYUN_DAV : '');
+				input.placeholder = f.ph;
+				input.autocomplete = 'off';
+				input.style.cssText = 'border:none;background:transparent;text-align:right;font:inherit;color:var(--ink);width:62%;outline:none';
+				row.appendChild(label);
+				row.appendChild(input);
+				inputs[f.key] = input;
+				body.appendChild(row);
+			}
+
+			const status = document.createElement('p');
+			status.className = 'setting-hint';
+			status.style.marginTop = '10px';
+			body.appendChild(status);
+
+			const saveBtn = document.createElement('button');
+			saveBtn.className = 'btn btn-primary btn-block';
+			saveBtn.style.marginTop = '12px';
+			saveBtn.textContent = cfg.enabled ? '保存并测试连接' : '开启并测试连接';
+			saveBtn.onclick = async () => {
+				saveBtn.disabled = true;
+				saveBtn.textContent = '连接中…';
+				status.textContent = '';
+				try {
+					saveFileSyncConfig({
+						url: inputs.url.value.trim(),
+						user: inputs.user.value.trim(),
+						pass: inputs.pass.value,
+						enabled: true
+					});
+					await testFileSyncConnection();
+					toast('连接成功，本地书会在同步时自动上传');
+					close();
+					onChanged?.();
+				} catch (e) {
+					saveFileSyncConfig({ enabled: false });
+					status.textContent = `连接失败：${e.message || e}`;
+					saveBtn.disabled = false;
+					saveBtn.textContent = '重试';
+				}
+			};
+			body.appendChild(saveBtn);
+
+			const upBtn = document.createElement('button');
+			upBtn.className = 'btn btn-soft btn-block';
+			upBtn.style.marginTop = '10px';
+			upBtn.textContent = '上传未同步的本地书';
+			upBtn.onclick = async () => {
+				upBtn.disabled = true;
+				try {
+					const r = await uploadAllPending({ onProgress: (m) => { if (upBtn.isConnected) upBtn.textContent = m; } });
+					toast(r.uploaded ? `已上传 ${r.uploaded} 本${r.failed ? ` · 失败 ${r.failed}` : ''}` : (r.failed ? `上传失败 ${r.failed} 本` : '没有待上传的书'), 2600);
+				} catch (e) {
+					toast(`上传失败：${e.message || e}`, 2600);
+				}
+				upBtn.disabled = false;
+				upBtn.textContent = '上传未同步的本地书';
+			};
+			body.appendChild(upBtn);
+
+			const pending = getPendingLocalDownloads();
+			if (pending.length) {
+				const downBtn = document.createElement('button');
+				downBtn.className = 'btn btn-soft btn-block';
+				downBtn.style.marginTop = '10px';
+				downBtn.textContent = `下载其他设备的 ${pending.length} 本本地书`;
+				downBtn.onclick = async () => {
+					downBtn.disabled = true;
+					try {
+						const r = await downloadAndImport(pending, { onProgress: (m) => { if (downBtn.isConnected) downBtn.textContent = m; } });
+						toast(`已下载 ${r.downloaded} 本${r.failed ? ` · 失败 ${r.failed}` : ''}`, 2600);
+						close();
+						onChanged?.();
+					} catch (e) {
+						toast(`下载失败：${e.message || e}`, 2600);
+						downBtn.disabled = false;
+						downBtn.textContent = `下载其他设备的 ${pending.length} 本本地书`;
+					}
+				};
+				body.appendChild(downBtn);
+			}
+
+			if (cfg.enabled) {
+				const offBtn = document.createElement('button');
+				offBtn.className = 'btn btn-soft btn-block';
+				offBtn.style.cssText = 'margin-top:10px;color:var(--danger)';
+				offBtn.textContent = '关闭文件同步';
+				offBtn.onclick = () => {
+					saveFileSyncConfig({ enabled: false });
+					toast('已关闭本地书文件同步');
+					close();
+					onChanged?.();
+				};
+				body.appendChild(offBtn);
+			}
+		}
+	});
+}
+
+/** Token 配置表单（含获取步骤说明） */
+function showTokenForm(container, onChanged) {	showSheet({
 		title: '开启同步',
 		build: (body, close) => {
 			const steps = document.createElement('div');

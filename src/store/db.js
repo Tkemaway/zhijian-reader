@@ -9,7 +9,7 @@
 import { normalizeBookFields, dedupeBooks, findSameBookRecord } from './book-identity.js';
 
 const DB_NAME = 'zhijian';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let _db = null;
 
@@ -36,6 +36,10 @@ function openDb() {
 			if (!db.objectStoreNames.contains('bookmarks')) {
 				const store = db.createObjectStore('bookmarks', { keyPath: 'id' });
 				store.createIndex('byBook', 'bookId');
+			}
+			// 本地导入书的原始文件（EPUB/TXT 字节）——用于跨设备云同步时原样重传/重传导入
+			if (!db.objectStoreNames.contains('files')) {
+				db.createObjectStore('files', { keyPath: 'hash' });
 			}
 		};
 		req.onsuccess = () => { _db = req.result; resolve(_db); };
@@ -336,6 +340,44 @@ export async function deleteBookmark(id) {
 	return new Promise((resolve, reject) => {
 		const t = db.transaction('bookmarks', 'readwrite');
 		t.objectStore('bookmarks').delete(id);
+		t.oncomplete = () => resolve();
+		t.onerror = () => reject(t.error);
+	});
+}
+
+// ---------- 本地书原始文件（跨设备云同步用） ----------
+
+/** 保存原始文件字节（按内容哈希去重，重复保存直接覆盖同一份） */
+export async function saveBookFile(hash, bytes, meta = {}) {
+	if (!hash) throw new Error('缺少文件哈希');
+	const buf = bytes instanceof Uint8Array ? bytes.slice().buffer : bytes;
+	if (!(buf instanceof ArrayBuffer)) throw new Error('无效的文件数据');
+	const db = await openDb();
+	return new Promise((resolve, reject) => {
+		const t = db.transaction('files', 'readwrite');
+		t.objectStore('files').put({ hash, bytes: buf, size: buf.byteLength, savedAt: Date.now(), ...meta });
+		t.oncomplete = () => resolve({ hash, size: buf.byteLength });
+		t.onerror = () => reject(t.error);
+	});
+}
+
+/** 读取原始文件记录（{ hash, bytes, size, name? }）；不存在返回 null */
+export async function getBookFile(hash) {
+	if (!hash) return null;
+	const db = await openDb();
+	return reqValue(db.transaction('files').objectStore('files').get(hash));
+}
+
+export async function hasBookFile(hash) {
+	return !!(await getBookFile(hash));
+}
+
+export async function deleteBookFile(hash) {
+	if (!hash) return;
+	const db = await openDb();
+	return new Promise((resolve, reject) => {
+		const t = db.transaction('files', 'readwrite');
+		t.objectStore('files').delete(hash);
 		t.oncomplete = () => resolve();
 		t.onerror = () => reject(t.error);
 	});

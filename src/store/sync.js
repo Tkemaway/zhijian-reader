@@ -223,7 +223,10 @@ async function buildLocalSnapshot() {
 	// 阅读时长：只上传本机那份（按设备分账）
 	// 书架：同步元数据（不传正文/目录；另一台设备打开该书时按 tocUrl 自动拉取）
 	// 本地导入的书（sourceId='local'）正文不跨设备，不上传
-	const bookOut = books.filter((b) => b.sourceId !== 'local').map((b) => ({
+	// 本地导入书也纳入快照（只传元数据 + 文件指纹）：
+	// 文件本体走 WebDAV（book-files.js），另一台设备按 fileRemoteName 拉取后重新导入。
+	// 没有 fileRemoteName 的本地书不传（文件还没上传，传了也没法取）。
+	const bookOut = books.filter((b) => b.sourceId !== 'local' || b.fileRemoteName).map((b) => ({
 		key: bookKeyOf(b),
 		title: b.title || '',
 		author: b.author || '',
@@ -238,7 +241,12 @@ async function buildLocalSnapshot() {
 		lastReadAt: Number(b.lastReadAt) || 0,
 		// 多书源：当前阅读的是哪个来源（换源选择跨设备同步，最新一次切换生效）
 		active: b.active ? 1 : 0,
-		activeAt: Number(b.activeAt) || 0
+		activeAt: Number(b.activeAt) || 0,
+		// 本地书文件指纹（文件本体在 WebDAV）
+		fileHash: b.fileHash || '',
+		fileName: b.fileName || '',
+		fileSize: Number(b.fileSize) || 0,
+		fileRemoteName: b.fileRemoteName || ''
 	}));
 	return {
 		version: DATA_VERSION,
@@ -276,7 +284,12 @@ function mergeBookEntry(a, b) {
 		addedAt: minPositive(a.addedAt, b.addedAt),
 		lastReadAt: Math.max(Number(a.lastReadAt) || 0, Number(b.lastReadAt) || 0),
 		active: activeWinner.active ? 1 : 0,
-		activeAt: Math.max(aActiveAt, bActiveAt)
+		activeAt: Math.max(aActiveAt, bActiveAt),
+		// 本地书的文件指纹：两端都有时取内容一致的那份（哈希相同即同一文件）
+		fileHash: a.fileHash || b.fileHash || '',
+		fileName: a.fileName || b.fileName || '',
+		fileSize: Number(a.fileSize) || Number(b.fileSize) || 0,
+		fileRemoteName: a.fileRemoteName || b.fileRemoteName || ''
 	};
 }
 
@@ -494,7 +507,16 @@ function alignBookmarkToLocalToc(bm, toc) {
 	return { ...bm, anchor: { ...a, chapterIdx: idx } };
 }
 
+/** 本轮同步发现的「云端有、本机没有」的本地书（待从 WebDAV 下载后导入） */
+let _pendingLocalDownloads = [];
+
+/** 读取待下载的本地书列表（供同步面板展示/触发下载） */
+export function getPendingLocalDownloads() {
+	return _pendingLocalDownloads.map((x) => ({ ...x }));
+}
+
 async function applySnapshotToLocal(merged, local) {
+	_pendingLocalDownloads = [];
 	let booksApplied = 0;
 	let progressApplied = 0;
 	let bookmarksApplied = 0;
@@ -556,6 +578,16 @@ async function applySnapshotToLocal(merged, local) {
 				patch.active = remoteBook.active ? 1 : 0;
 				patch.activeAt = Number(remoteBook.activeAt) || 0;
 			}
+			// 本地书：补齐文件指纹（旧版本导入的书没有这些字段）
+			if (remoteBook.sourceId === 'local' && remoteBook.fileRemoteName) {
+				if (!exist.fileHash && remoteBook.fileHash) patch.fileHash = remoteBook.fileHash;
+				if (!exist.fileName && remoteBook.fileName) patch.fileName = remoteBook.fileName;
+				if (!exist.fileSize && remoteBook.fileSize) patch.fileSize = remoteBook.fileSize;
+				if (!exist.fileRemoteName) {
+					patch.fileRemoteName = remoteBook.fileRemoteName;
+					patch.fileUploadedAt = Number(exist.fileUploadedAt) || 0;
+				}
+			}
 			if (Object.keys(patch).length) {
 				await updateBook(exist.id, patch);
 				Object.assign(exist, patch);
@@ -567,6 +599,22 @@ async function applySnapshotToLocal(merged, local) {
 			byKey.set(rb.key, exist);
 			byKey.set(keyBefore, exist);
 			byKey.set(bookIdentityKey(exist), exist);
+			continue;
+		}
+
+		// 本地导入书：本机没有 → 不能建"幽灵书"（没有 tocUrl 可拉目录），
+		// 登记为待下载任务，由同步面板/自动流程走 WebDAV 下载后解析导入
+		if (remoteBook.sourceId === 'local') {
+			if (remoteBook.fileRemoteName) {
+				_pendingLocalDownloads.push({
+					title: remoteBook.title || '',
+					author: remoteBook.author || '',
+					fileHash: remoteBook.fileHash || '',
+					fileName: remoteBook.fileName || '',
+					fileSize: Number(remoteBook.fileSize) || 0,
+					fileRemoteName: remoteBook.fileRemoteName
+				});
+			}
 			continue;
 		}
 
@@ -685,7 +733,8 @@ async function applySnapshotToLocal(merged, local) {
 		bookmarks: bookmarksApplied,
 		reconciled,
 		booksAdded,
-		booksUpdated
+		booksUpdated,
+		pendingLocal: _pendingLocalDownloads.length
 	};
 }
 
