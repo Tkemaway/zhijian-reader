@@ -710,6 +710,11 @@ body.ink-mode .bc-badge { display: none; }
 	height: 210px;
 	z-index: 40;
 	transform: rotateY(-3deg) translateZ(12px);
+	/* 选中时书脊本体隐形成"抽书留下的空位"，只显示抽出的封面——
+	   否则 210px 高的书脊会比抬起的封面高出一截，从背后透出来形成重叠 */
+	background: transparent;
+	box-shadow: none;
+	border-radius: 0;
 }
 /* 选中时书脊本体被封面遮住，隐藏它的文字，避免从封面上透出来 */
 .spine.is-active .spine-num,
