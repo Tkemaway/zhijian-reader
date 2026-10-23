@@ -78,6 +78,23 @@ const apkOut = path.join(root, `纸间-v${pkg.version}.apk`);
 fs.copyFileSync(apkSrc, apkOut);
 const size = (fs.statSync(apkOut).size / 1024 / 1024).toFixed(2);
 
+// ---------- 6. 归档旧包：根目录只保留最新，历史最多留 3 个 ----------
+// 每版 APK 约 9MB，长期堆在根目录会越来越乱；旧包统一进 _apk_history/（已 gitignore）
+const apkName = path.basename(apkOut);
+const historyDir = path.join(root, '_apk_history');
+fs.mkdirSync(historyDir, { recursive: true });
+for (const f of fs.readdirSync(root)) {
+	if (!f.endsWith('.apk') || f === apkName) continue;
+	try { fs.renameSync(path.join(root, f), path.join(historyDir, f)); } catch { /* ignore */ }
+}
+const archived = fs.readdirSync(historyDir)
+	.filter((f) => f.endsWith('.apk'))
+	.map((f) => ({ f, t: fs.statSync(path.join(historyDir, f)).mtimeMs }))
+	.sort((a, b) => b.t - a.t);
+for (const old of archived.slice(3)) {
+	try { fs.unlinkSync(path.join(historyDir, old.f)); } catch { /* ignore */ }
+}
+
 console.log(`\n========================================`);
 console.log(`  ✅ 纸间 v${pkg.version} 构建完成`);
 console.log(`     versionCode: ${versionCode}`);
