@@ -122,6 +122,13 @@ export async function renderProfile(container, app) {
 				</div>
 				<div class="setting-value" id="sync-value">未开启</div>
 			</div>
+			<div class="setting-row" id="file-sync-row">
+				<div>
+					<div class="setting-label">本地书文件同步</div>
+					<div class="setting-hint" id="file-sync-status">用 WebDAV 网盘同步导入的 EPUB / TXT 原文件</div>
+				</div>
+				<div class="setting-value" id="file-sync-value">未配置</div>
+			</div>
 		</div>
 
 		<div class="section-title">书源（${sources.filter((s) => s.enabled !== false).length} 个启用）</div>
@@ -299,6 +306,30 @@ export async function renderProfile(container, app) {
 	container.querySelector('#sync-row').addEventListener('click', () => {
 		showSyncPanel(container, () => {
 			refreshSyncUI();
+			app.refresh();
+		});
+	});
+
+	// ---------- 本地书文件同步（独立于 GitHub 同步，可单独使用）----------
+	const fileSyncValue = container.querySelector('#file-sync-value');
+	const fileSyncStatus = container.querySelector('#file-sync-status');
+	const refreshFileSyncUI = () => {
+		const fc = loadFileSyncConfig();
+		if (isFileSyncEnabled()) {
+			fileSyncValue.textContent = '已开启';
+			fileSyncStatus.textContent = `${fc.user || 'WebDAV'} · 导入的 EPUB / TXT 原文件跨设备同步`;
+		} else if (fc.url && fc.user) {
+			fileSyncValue.textContent = '未连接';
+			fileSyncStatus.textContent = '配置未完成或连接失败，点此重新设置';
+		} else {
+			fileSyncValue.textContent = '未配置';
+			fileSyncStatus.textContent = '用 WebDAV 网盘同步导入的 EPUB / TXT 原文件';
+		}
+	};
+	refreshFileSyncUI();
+	container.querySelector('#file-sync-row').addEventListener('click', () => {
+		showFileSyncPanel(container, () => {
+			refreshFileSyncUI();
 			app.refresh();
 		});
 	});

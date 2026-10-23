@@ -91,21 +91,62 @@ export async function renderLibrary(container, app) {
 		return;
 	}
 
-	const grid = document.createElement('div');
-	grid.className = 'book-grid';
+	// 书柜：按当前宽度把书排到「层板」上（每行一条整木板）
 	const selState = { active: false };
-	cards.forEach((book, i) => {
+	const cardEls = cards.map((book, i) => {
 		const card = bookCard(book, app, groups.get(groupKeyOf(book)), selState);
 		// 逐项优雅进场（封顶延迟，避免长列表等待）
 		card.classList.add('stagger-item');
 		card.style.animationDelay = `${Math.min(i, 11) * 36}ms`;
-		grid.appendChild(card);
+		return card;
 	});
-	zone.innerHTML = '';
-	zone.appendChild(grid);
 
-	bindSelection(container, grid, selState, app);
+	const bookcase = document.createElement('div');
+	bookcase.className = 'bookcase';
+	const columnsFor = (width) => {
+		const gap = 14;
+		const minW = window.innerWidth >= 720 ? 150 : 118;
+		return Math.max(1, Math.floor((Math.max(width, 200) - 28 + gap) / (minW + gap)));
+	};
+	const layout = () => {
+		const cols = columnsFor(bookcase.clientWidth || zone.clientWidth || 360);
+		bookcase.style.setProperty('--cols', String(cols));
+		bookcase.innerHTML = '';
+		for (let i = 0; i < cardEls.length; i += cols) {
+			const row = document.createElement('div');
+			row.className = 'shelf-row';
+			for (const card of cardEls.slice(i, i + cols)) row.appendChild(card);
+			bookcase.appendChild(row);
+		}
+		return cols;
+	};
+
+	zone.innerHTML = '';
+	zone.appendChild(bookcase);
+	let lastCols = layout();
+
+	// 旋屏 / 分屏改变宽度 → 列数变化时重新排架（高度自适应，避免频繁重建）
+	let resizeTimer = null;
+	const onResize = () => {
+		clearTimeout(resizeTimer);
+		resizeTimer = setTimeout(() => {
+			if (!bookcase.isConnected) return;
+			const cols = columnsFor(bookcase.clientWidth);
+			if (cols !== lastCols) lastCols = layout();
+		}, 140);
+	};
+	_shelfResizeCleanup?.();
+	window.addEventListener('resize', onResize);
+	_shelfResizeCleanup = () => {
+		window.removeEventListener('resize', onResize);
+		clearTimeout(resizeTimer);
+	};
+
+	bindSelection(container, bookcase, selState, app);
 }
+
+/** 书架页的 resize 监听清理（重新渲染书架页时调用，避免监听堆积） */
+let _shelfResizeCleanup = null;
 
 /**
  * 书架多选：点「管理」进入；按下并滑动可以连续选中/取消（像整理真实书架）。
