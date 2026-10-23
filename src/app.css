@@ -645,7 +645,7 @@ body.ink-mode .bc-badge { display: none; }
 .shelf-total { font-size: 10px; letter-spacing: 0.12em; color: var(--ink-3); white-space: nowrap; }
 .spine-stage {
 	position: relative;
-	height: 268px;
+	height: 320px;
 	display: flex;
 	align-items: flex-end;
 	justify-content: center;
@@ -679,7 +679,7 @@ body.ink-mode .bc-badge { display: none; }
 	--absd: 0;
 	position: relative;
 	width: 30px;
-	height: 202px;
+	height: 210px;
 	border: none;
 	padding: 7px 0 6px;
 	border-radius: 2px 3px 1px 2px;
@@ -707,9 +707,15 @@ body.ink-mode .bc-badge { display: none; }
 }
 .spine.is-active {
 	width: 34px;
-	height: 212px;
+	height: 210px;
 	z-index: 40;
 	transform: rotateY(-3deg) translateZ(12px);
+}
+/* 选中时书脊本体被封面遮住，隐藏它的文字，避免从封面上透出来 */
+.spine.is-active .spine-num,
+.spine.is-active .spine-title,
+.spine.is-active .spine-author {
+	opacity: 0;
 }
 .spine-num {
 	font-size: 7.5px;
@@ -737,10 +743,10 @@ body.ink-mode .bc-badge { display: none; }
 .spine-cover {
 	position: absolute;
 	left: 50%;
-	bottom: 10px;
-	width: 152px;
-	height: 220px;
-	transform: translateX(-50%) rotateY(-13deg);
+	bottom: 46px;
+	width: 150px;
+	height: 200px;
+	transform: translateX(-50%) rotateY(-10deg);
 	transform-origin: center bottom;
 	border-radius: 3px 9px 9px 3px;
 	box-shadow:
@@ -762,8 +768,8 @@ body.ink-mode .bc-badge { display: none; }
 	box-shadow: 1px 0 0 rgba(0, 0, 0, 0.12);
 }
 @keyframes cover-pop {
-	from { opacity: 0; transform: translateX(-50%) rotateY(-26deg) translateY(6px); }
-	to { opacity: 1; transform: translateX(-50%) rotateY(-13deg); }
+	from { opacity: 0; transform: translateX(-50%) rotateY(-24deg) translateY(8px); }
+	to { opacity: 1; transform: translateX(-50%) rotateY(-10deg); }
 }
 .sc-title {
 	writing-mode: vertical-rl;
