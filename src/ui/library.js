@@ -12,6 +12,9 @@ import { openSourceSwitcher } from './source-switch.js';
 import { rememberImportedFile, uploadLocalBookFile, isFileSyncEnabled } from '../store/book-files.js';
 import { parseBookFile } from '../core/importer.js';
 
+/** 书架页 resize 监听清理（重新渲染时调用，避免监听堆积） */
+let _shelfResizeCleanup = null;
+
 export async function renderLibrary(container, app) {
 	container.innerHTML = `
 		<div style="display:flex;align-items:flex-end;justify-content:space-between">
@@ -97,8 +100,15 @@ export async function renderLibrary(container, app) {
 		app.go('reader', { book: b, chapterIdx: p?.chapterIdx || 0, scrollTop: p?.scrollTop || 0, pageIdx: p?.pageIdx || 0, anchor: p?.anchor || null });
 	};
 
-	let sel = -1; // -1 = 书籍整齐摆放（未挑选）；>=0 = 已抽出某一本
+	let sel = -1; // -1 = 整齐排列（未挑选）；>=0 = 已抽出某一本
+	let anchor = 0; // 整齐排列时屏幕中心对准哪一本（书多时用来翻页）
 	let manageMode = false;
+
+	const SPINE_SLOT = 33; // 书脊 30px + 间隙 3px
+	const stageWidth = () => stageEl.clientWidth || 360;
+	const spanFor = (w) => Math.min(5, Math.max(3, Math.floor((w - 40) / (SPINE_SLOT * 2))));
+	let span = spanFor(stageWidth());
+	anchor = cards.length <= span * 2 + 1 ? (cards.length - 1) / 2 : span;
 
 	const headHtml = () => `
 		<div class="shelf-head">
@@ -108,100 +118,105 @@ export async function renderLibrary(container, app) {
 			<span class="shelf-total">${cards.length} 本</span>
 		</div>`;
 
-	/** 生成一根书脊（active 时附带抽出的封面） */
-	const makeSpine = (b, i, active = false) => {
-		const p = progressMap.get(b.id);
-		const pct = b.totalChapters ? Math.min(100, Math.round(((b.readChapters || 0) / b.totalChapters) * 100)) : 0;
-		const bg = b.coverStyle || 'linear-gradient(145deg,#4a4a4c,#242426)';
-		const spine = document.createElement('button');
-		spine.type = 'button';
-		spine.className = `spine${active ? ' is-active' : ''}`;
-		spine.style.setProperty('--cover-bg', bg);
-		spine.setAttribute('aria-label', b.title);
-		spine.innerHTML = `
-			<span class="spine-num">N ${String(i + 1).padStart(2, '0')}</span>
-			<span class="spine-title">${escapeHtml(b.title)}</span>
-			<span class="spine-author">${escapeHtml(b.author || '')}</span>
-			${active ? `
+	// ---------- 构建一次 DOM：书脊常驻，切换只改变换 ----------
+	// 每次切换都重建 DOM 会让动画"跳变"；真实的书架是书一直在架子上，
+	// 只是位置和朝向连续变化——所以这里只创建一次，之后都靠 CSS 过渡补间。
+	const spineEls = [];
+	const buildStage = () => {
+		stageEl.innerHTML = `
+			${headHtml()}
+			<div class="spine-stage"><div class="spine-row"></div></div>
+			<div class="shelf-pager" style="display:none">
+				<button class="pager-btn" data-dir="-1" aria-label="上一本">‹</button>
+				<span class="pager-text"></span>
+				<button class="pager-btn" data-dir="1" aria-label="下一本">›</button>
+			</div>`;
+		const row = stageEl.querySelector('.spine-row');
+		cards.forEach((b, i) => {
+			const p = progressMap.get(b.id);
+			const pct = b.totalChapters ? Math.min(100, Math.round(((b.readChapters || 0) / b.totalChapters) * 100)) : 0;
+			const bg = b.coverStyle || 'linear-gradient(145deg,#4a4a4c,#242426)';
+			const el = document.createElement('button');
+			el.type = 'button';
+			el.className = 'spine';
+			el.style.setProperty('--cover-bg', bg);
+			el.setAttribute('aria-label', b.title);
+			el.innerHTML = `
+				<span class="spine-num">N ${String(i + 1).padStart(2, '0')}</span>
+				<span class="spine-title">${escapeHtml(b.title)}</span>
+				<span class="spine-author">${escapeHtml(b.author || '')}</span>
 				<span class="spine-cover" style="background:${bg}">
 					<span class="sc-title">${escapeHtml(b.title)}</span>
 					<span class="sc-bottom">
 						<span class="sc-author">${escapeHtml(b.author || '')}</span>
 						<span class="sc-badge">${p?.chapterTitle ? `读至 ${pct}%` : `${b.totalChapters || 0} 章`}</span>
 					</span>
-				</span>` : ''}`;
-		spine.addEventListener('click', (e) => {
-			e.stopPropagation();
-			if (Date.now() - lastSwipeAt < 320) return; // 刚滑动完，忽略误触
-			if (i === sel) openBook(b); // 再点一次抽出的书 → 开始读
-			else { sel = i; renderStage(); renderInfo(); }
+				</span>`;
+			el.addEventListener('click', (e) => {
+				e.stopPropagation();
+				if (Date.now() - lastSwipeAt < 320) return; // 刚滑动完，忽略误触
+				if (sel === i) { openBook(cards[i]); return; } // 再点抽出的书 → 开始读
+				sel = i;
+				applyLayout();
+				renderInfo();
+			});
+			row.appendChild(el);
+			spineEls.push(el);
 		});
-		return spine;
-	};
-
-	// 初始形态：书籍整整齐齐排成一排（可横向滑动查看）
-	const renderNeat = () => {
-		stageEl.innerHTML = `
-			${headHtml()}
-			<div class="spine-stage is-neat"><div class="spine-row"></div></div>`;
-		const row = stageEl.querySelector('.spine-row');
-		cards.forEach((b, i) => {
-			const s = makeSpine(b, i);
-			s.style.setProperty('--d', '0');
-			s.style.setProperty('--absd', '0');
-			row.appendChild(s);
-		});
-	};
-
-	// 挑选形态：被选中的书从架上抽出、转向正面，两侧书脊后退
-	const renderFocus = () => {
-		const stageW = stageEl.clientWidth || 360;
-		const span = Math.min(5, Math.max(3, Math.floor((stageW - 40) / 66)));
-		stageEl.innerHTML = `
-			${headHtml()}
-			<div class="spine-stage"><div class="spine-row"></div></div>
-			<div class="shelf-pager">
-				<button class="pager-btn" data-dir="-1" ${sel === 0 ? 'disabled' : ''} aria-label="上一本">‹</button>
-				<span class="pager-text">${sel + 1}<i>/</i>${cards.length}</span>
-				<button class="pager-btn" data-dir="1" ${sel === cards.length - 1 ? 'disabled' : ''} aria-label="下一本">›</button>
-			</div>`;
-		const row = stageEl.querySelector('.spine-row');
-		for (let i = sel - span; i <= sel + span; i++) {
-			if (i < 0 || i >= cards.length) {
-				const spacer = document.createElement('span');
-				spacer.className = 'spine-slot';
-				row.appendChild(spacer);
-				continue;
-			}
-			const s = makeSpine(cards[i], i, i === sel);
-			s.style.setProperty('--d', String(i - sel));
-			s.style.setProperty('--absd', String(Math.abs(i - sel)));
-			row.appendChild(s);
-		}
 		stageEl.querySelectorAll('.pager-btn').forEach((btn) => {
 			btn.addEventListener('click', (e) => { e.stopPropagation(); moveSel(Number(btn.dataset.dir)); });
 		});
-		// 点书架空白处 → 把书放回去（回到整齐排列）
+		// 点书架空白 → 把书放回去（保持当前视角，回到整齐排列）
 		stageEl.querySelector('.spine-stage').addEventListener('click', (e) => {
-			if (e.target.closest('.spine')) return;
+			if (e.target.closest('.spine') || sel < 0) return;
+			anchor = Math.max(0, Math.min(cards.length - 1, sel));
 			sel = -1;
-			renderStage();
+			applyLayout();
 			renderInfo();
 		});
 	};
 
-	const renderStage = () => (sel < 0 ? renderNeat() : renderFocus());
+	/** 只更新变换：选中的书到中间并转正面，其余按距离后退、旋转、淡出 */
+	const applyLayout = () => {
+		span = spanFor(stageWidth());
+		const focus = sel >= 0 ? sel : anchor;
+		cards.forEach((b, i) => {
+			const el = spineEls[i];
+			const d = i - focus;
+			const far = Math.abs(d) > span + 1;
+			const active = sel === i;
+			el.classList.toggle('is-active', active);
+			el.style.opacity = far ? '0' : '1';
+			el.style.pointerEvents = far ? 'none' : 'auto';
+			el.style.zIndex = String(60 - Math.abs(d));
+			// 选中：停在中心并略微转向；其余：越远转得越多、退得越深、落得越低
+			const rot = active || d === 0 ? (active ? -3 : 0) : Math.max(-24, Math.min(24, -d * 5));
+			el.style.transform =
+				`translateX(${d * SPINE_SLOT}px) rotateY(${rot}deg) ` +
+				`translateZ(${Math.abs(d) * -14}px) translateY(${Math.abs(d) * 3}px)`;
+		});
+		const pager = stageEl.querySelector('.shelf-pager');
+		if (pager) {
+			pager.style.display = sel < 0 ? 'none' : '';
+			if (sel >= 0) {
+				stageEl.querySelector('.pager-text').innerHTML = `${sel + 1}<i>/</i>${cards.length}`;
+				stageEl.querySelectorAll('.pager-btn').forEach((btn) => {
+					btn.disabled = Number(btn.dataset.dir) < 0 ? sel === 0 : sel === cards.length - 1;
+				});
+			}
+		}
+	};
 
 	const moveSel = (dir) => {
 		if (sel < 0) return;
 		const next = Math.max(0, Math.min(cards.length - 1, sel + dir));
 		if (next === sel) return;
 		sel = next;
-		renderStage();
+		applyLayout();
 		renderInfo();
 	};
 
-	// 抽出后左右滑动切书（整齐状态下横滑交给原生滚动）
+	// 抽出后左右滑动切书；整齐状态下横滑翻看整排（每次翻半屏）
 	let sx = 0;
 	let sy = 0;
 	let tracking = false;
@@ -215,15 +230,32 @@ export async function renderLibrary(container, app) {
 	stageEl.addEventListener('pointerup', (e) => {
 		if (!tracking) return;
 		tracking = false;
-		if (sel < 0) return;
 		const dx = e.clientX - sx;
 		const dy = e.clientY - sy;
-		if (Math.abs(dx) > 42 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-			lastSwipeAt = Date.now();
+		if (Math.abs(dx) < 42 || Math.abs(dx) <= Math.abs(dy) * 1.2) return;
+		lastSwipeAt = Date.now();
+		if (sel >= 0) {
 			moveSel(dx > 0 ? -1 : 1);
+		} else {
+			const step = Math.max(1, span);
+			anchor = Math.max(0, Math.min(cards.length - 1, anchor + (dx > 0 ? -step : step)));
+			applyLayout();
 		}
 	});
 	stageEl.addEventListener('pointercancel', () => { tracking = false; });
+
+	// 旋屏/分屏后重新算可见范围
+	let resizeTimer = null;
+	const onResize = () => {
+		clearTimeout(resizeTimer);
+		resizeTimer = setTimeout(() => { if (stageEl.isConnected) applyLayout(); }, 120);
+	};
+	window.addEventListener('resize', onResize);
+	_shelfResizeCleanup?.();
+	_shelfResizeCleanup = () => {
+		window.removeEventListener('resize', onResize);
+		clearTimeout(resizeTimer);
+	};
 
 	const renderInfo = () => {
 		// 整齐状态：只给一个继续阅读的入口，不预设选中任何书
@@ -254,8 +286,13 @@ export async function renderLibrary(container, app) {
 		infoEl.querySelector('#shelf-more').addEventListener('click', () => showBookActions(b, app, groups.get(groupKeyOf(b))));
 	};
 
-	renderStage();
+	buildStage();
+	applyLayout();
 	renderInfo();
+	// 第一帧落位完成后再启用过渡，避免进场时所有书从中心飞散
+	requestAnimationFrame(() => {
+		stageEl.querySelector('.spine-stage')?.classList.add('is-ready');
+	});
 
 	// ---------- 管理视图（网格 + 滑动多选）----------
 	const selState = { active: false };

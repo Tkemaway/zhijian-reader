@@ -646,9 +646,6 @@ body.ink-mode .bc-badge { display: none; }
 .spine-stage {
 	position: relative;
 	height: 320px;
-	display: flex;
-	align-items: flex-end;
-	justify-content: center;
 	perspective: 1500px;
 	perspective-origin: 50% 88%;
 }
@@ -667,17 +664,18 @@ body.ink-mode .bc-badge { display: none; }
 	pointer-events: none;
 }
 .spine-row {
-	display: flex;
-	align-items: flex-end;
-	gap: 3px;
+	position: absolute;
+	inset: 0;
 	transform-style: preserve-3d;
-	padding-bottom: 14px;
 }
 /* 单本书的书脊 */
 .spine {
 	--d: 0;
 	--absd: 0;
-	position: relative;
+	position: absolute;
+	left: 50%;
+	bottom: 14px;
+	margin-left: -15px;
 	width: 30px;
 	height: 210px;
 	border: none;
@@ -693,9 +691,11 @@ body.ink-mode .bc-badge { display: none; }
 		inset -7px 0 10px rgba(0, 0, 0, 0.24),
 		inset 2px 0 0 rgba(255, 255, 255, 0.18),
 		0 10px 14px -8px rgba(0, 0, 0, 0.36);
-	transform: rotateY(calc(var(--d) * -7deg)) translateZ(calc(var(--absd) * -16px)) translateY(calc(var(--absd) * 4px));
+	transform: translateX(0);
 	transform-style: preserve-3d;
-	transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), width 0.45s, height 0.45s;
+	/* 书一直在架上，切换只改变换 → 由过渡补间成连续动画（首帧不过渡） */
+	transition: none;
+	will-change: transform;
 	cursor: pointer;
 	overflow: visible;
 }
@@ -706,12 +706,7 @@ body.ink-mode .bc-badge { display: none; }
 	pointer-events: none;
 }
 .spine.is-active {
-	width: 34px;
-	height: 210px;
-	z-index: 40;
-	transform: rotateY(-3deg) translateZ(12px);
-	/* 选中时书脊本体隐形成"抽书留下的空位"，只显示抽出的封面——
-	   否则 210px 高的书脊会比抬起的封面高出一截，从背后透出来形成重叠 */
+	/* 选中时书脊本体隐形成"抽书留下的空位"，只显示抽出的封面 */
 	background: transparent;
 	box-shadow: none;
 	border-radius: 0;
@@ -721,6 +716,9 @@ body.ink-mode .bc-badge { display: none; }
 .spine.is-active .spine-title,
 .spine.is-active .spine-author {
 	opacity: 0;
+}
+.spine-stage.is-ready .spine {
+	transition: transform 0.52s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s var(--ease);
 }
 .spine-num {
 	font-size: 7.5px;
@@ -751,8 +749,10 @@ body.ink-mode .bc-badge { display: none; }
 	bottom: 46px;
 	width: 150px;
 	height: 200px;
-	transform: translateX(-50%) rotateY(-10deg);
+	opacity: 0;
+	transform: translateX(-50%) rotateY(-86deg) scale(0.94);
 	transform-origin: center bottom;
+	transition: opacity 0.3s var(--ease), transform 0.52s cubic-bezier(0.22, 1, 0.36, 1);
 	border-radius: 3px 9px 9px 3px;
 	box-shadow:
 		18px 26px 40px -18px rgba(30, 22, 10, 0.5),
@@ -761,8 +761,11 @@ body.ink-mode .bc-badge { display: none; }
 	flex-direction: column;
 	justify-content: space-between;
 	padding: 14px 12px 12px;
-	animation: cover-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1);
 	pointer-events: none;
+}
+.spine.is-active .spine-cover {
+	opacity: 1;
+	transform: translateX(-50%) rotateY(-10deg) scale(1);
 }
 .spine-cover::after {
 	content: '';
@@ -771,10 +774,6 @@ body.ink-mode .bc-badge { display: none; }
 	width: 3px;
 	background: linear-gradient(90deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.04));
 	box-shadow: 1px 0 0 rgba(0, 0, 0, 0.12);
-}
-@keyframes cover-pop {
-	from { opacity: 0; transform: translateX(-50%) rotateY(-24deg) translateY(8px); }
-	to { opacity: 1; transform: translateX(-50%) rotateY(-10deg); }
 }
 .sc-title {
 	writing-mode: vertical-rl;
@@ -803,25 +802,6 @@ body.ink-mode .bc-badge { display: none; }
 	color: rgba(255, 255, 255, 0.9);
 	letter-spacing: 0.04em;
 }
-/* 整齐排列状态：一排书脊、可横向滑动，没有抽出的封面 */
-.spine-stage.is-neat {
-	justify-content: flex-start;
-	overflow-x: auto;
-	overflow-y: hidden;
-	-webkit-overflow-scrolling: touch;
-	scrollbar-width: none;
-	padding: 0 16px;
-	height: 248px;
-}
-.spine-stage.is-neat::-webkit-scrollbar { display: none; }
-.spine-stage.is-neat::after { display: none; }
-.spine-stage.is-neat .spine-row {
-	transform: rotateY(-2deg);
-	transform-origin: left center;
-	padding-bottom: 12px;
-}
-.spine-stage.is-neat .spine { flex: 0 0 30px; }
-.spine-stage.is-neat .spine:active { transform: translateY(-6px) rotateY(0deg); }
 .shelf-neat-hint {
 	font-size: 12.5px;
 	color: var(--ink-3);
@@ -829,25 +809,6 @@ body.ink-mode .bc-badge { display: none; }
 	letter-spacing: 0.02em;
 }
 
-/* 整齐排列状态：一排书脊、可横向滑动，没有抽出的封面 */
-.spine-stage.is-neat {
-	justify-content: flex-start;
-	overflow-x: auto;
-	overflow-y: hidden;
-	-webkit-overflow-scrolling: touch;
-	scrollbar-width: none;
-	padding: 0 16px;
-	height: 248px;
-}
-.spine-stage.is-neat::-webkit-scrollbar { display: none; }
-.spine-stage.is-neat::after { display: none; }
-.spine-stage.is-neat .spine-row {
-	transform: rotateY(-2deg);
-	transform-origin: left center;
-	padding-bottom: 12px;
-}
-.spine-stage.is-neat .spine { flex: 0 0 30px; }
-.spine-stage.is-neat .spine:active { transform: translateY(-6px) rotateY(0deg); }
 .shelf-neat-hint {
 	font-size: 12.5px;
 	color: var(--ink-3);
