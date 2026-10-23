@@ -803,6 +803,58 @@ body.ink-mode .bc-badge { display: none; }
 	color: rgba(255, 255, 255, 0.9);
 	letter-spacing: 0.04em;
 }
+/* 整齐排列状态：一排书脊、可横向滑动，没有抽出的封面 */
+.spine-stage.is-neat {
+	justify-content: flex-start;
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+	padding: 0 16px;
+	height: 248px;
+}
+.spine-stage.is-neat::-webkit-scrollbar { display: none; }
+.spine-stage.is-neat::after { display: none; }
+.spine-stage.is-neat .spine-row {
+	transform: rotateY(-2deg);
+	transform-origin: left center;
+	padding-bottom: 12px;
+}
+.spine-stage.is-neat .spine { flex: 0 0 30px; }
+.spine-stage.is-neat .spine:active { transform: translateY(-6px) rotateY(0deg); }
+.shelf-neat-hint {
+	font-size: 12.5px;
+	color: var(--ink-3);
+	padding: 16px 2px 10px;
+	letter-spacing: 0.02em;
+}
+
+/* 整齐排列状态：一排书脊、可横向滑动，没有抽出的封面 */
+.spine-stage.is-neat {
+	justify-content: flex-start;
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+	padding: 0 16px;
+	height: 248px;
+}
+.spine-stage.is-neat::-webkit-scrollbar { display: none; }
+.spine-stage.is-neat::after { display: none; }
+.spine-stage.is-neat .spine-row {
+	transform: rotateY(-2deg);
+	transform-origin: left center;
+	padding-bottom: 12px;
+}
+.spine-stage.is-neat .spine { flex: 0 0 30px; }
+.spine-stage.is-neat .spine:active { transform: translateY(-6px) rotateY(0deg); }
+.shelf-neat-hint {
+	font-size: 12.5px;
+	color: var(--ink-3);
+	padding: 16px 2px 10px;
+	letter-spacing: 0.02em;
+}
+
 /* 页码 */
 .shelf-pager {
 	display: flex;
