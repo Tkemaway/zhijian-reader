@@ -11,7 +11,7 @@
  *  - 以 SHA-256 内容哈希命名，天然去重；重复导入/换设备不会重复上传
  *  - 书籍元数据（哈希/文件名/大小）随进度快照走 GitHub Gist，文件走 WebDAV
  */
-import { requestBytes } from '../core/http.js';
+import { requestBytes, requestText } from '../core/http.js';
 import {
 	getBooks, updateBook, addBook, saveToc, saveChapters,
 	saveBookFile, getBookFile, hasBookFile
@@ -24,10 +24,34 @@ const DEFAULTS = { enabled: false, url: 'https://dav.jianguoyun.com/dav/', user:
 /** 坚果云 WebDAV 地址（预填；其它服务可自行修改） */
 export const JIANGUOYUN_DAV = 'https://dav.jianguoyun.com/dav/';
 
+/**
+ * 规范化 WebDAV 地址：
+ *  - 补协议 https://
+ *  - 坚果云必须带 /dav 路径（只填 dav.jianguoyun.com 会 404）
+ *  - 结尾补 /
+ */
+export function normalizeDavUrl(raw) {
+	let u = String(raw || '').trim();
+	if (!u) return '';
+	if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+	try {
+		const url = new URL(u);
+		if (/^dav\.jianguoyun\.com$/i.test(url.hostname) && !/^\/dav(\/|$)/i.test(url.pathname)) {
+			url.pathname = '/dav/';
+		}
+		if (!url.pathname.endsWith('/')) url.pathname += '/';
+		return url.toString();
+	} catch {
+		return u;
+	}
+}
+
 export function loadFileSyncConfig() {
 	try {
 		const raw = localStorage.getItem(CFG_KEY);
-		return { ...DEFAULTS, ...(raw ? JSON.parse(raw) : {}) };
+		const cfg = { ...DEFAULTS, ...(raw ? JSON.parse(raw) : {}) };
+		cfg.url = normalizeDavUrl(cfg.url || DEFAULTS.url) || DEFAULTS.url;
+		return cfg;
 	} catch {
 		return { ...DEFAULTS };
 	}
@@ -35,6 +59,7 @@ export function loadFileSyncConfig() {
 
 export function saveFileSyncConfig(patch) {
 	const next = { ...loadFileSyncConfig(), ...patch };
+	if (patch.url !== undefined) next.url = normalizeDavUrl(patch.url);
 	try { localStorage.setItem(CFG_KEY, JSON.stringify(next)); } catch { /* ignore */ }
 	return next;
 }
@@ -139,9 +164,11 @@ export async function testFileSyncConnection() {
 		body: new TextEncoder().encode('zhijian webdav probe'),
 		headers: { 'Content-Type': 'text/plain' }
 	});
-	if (r.status === 401) throw new Error('账号或密码不正确（坚果云需使用「应用密码」）');
+	if (r.status === 401) throw new Error('账号或密码不正确（坚果云需使用「应用密码」，不是登录密码）');
 	if (r.status === 403) throw new Error('账号无写入权限');
-	if (r.status >= 400) throw new Error(`连接失败（HTTP ${r.status}）`);
+	if (r.status === 404) throw new Error(`服务器返回 404（路径不存在）：坚果云地址必须是 https://dav.jianguoyun.com/dav/ ，当前为 ${cfg.url}`);
+	if (r.status === 409) throw new Error('云端目录不存在（HTTP 409）');
+	if (r.status >= 400) throw new Error(`连接失败（HTTP ${r.status}）：${cfg.url}`);
 	await davRequest(cfg, 'DELETE', probe).catch(() => { /* 清理失败不影响结论 */ });
 	return true;
 }
@@ -288,4 +315,38 @@ export async function downloadAndImport(items, { onProgress } = {}) {
 		}
 	}
 	return { downloaded, failed, total: list.length };
+}
+
+
+// ---------- JSON 快照读写（跨设备同步走坚果云时用）----------
+
+/** 读取云端 JSON 文本（不存在返回 null） */
+export async function davReadText(name) {
+	const cfg = loadFileSyncConfig();
+	if (!isFileSyncEnabled()) throw new Error('坚果云同步未配置');
+	const r = await requestText(davUrl(cfg, name), {
+		headers: { Authorization: basicAuth(cfg.user, cfg.pass) },
+		timeout: 30000
+	});
+	if (r.status === 404) return null;
+	if (r.status === 401) throw new Error('坚果云账号或应用密码不正确');
+	if (r.status >= 400) throw new Error(`云端读取失败（HTTP ${r.status}）`);
+	return r.text;
+}
+
+/** 写入云端 JSON 文本 */
+export async function davWriteText(name, text) {
+	const cfg = loadFileSyncConfig();
+	if (!isFileSyncEnabled()) throw new Error('坚果云同步未配置');
+	const r = await requestText(davUrl(cfg, name), {
+		method: 'PUT',
+		body: text,
+		headers: {
+			Authorization: basicAuth(cfg.user, cfg.pass),
+			'Content-Type': 'application/json; charset=utf-8'
+		},
+		timeout: 30000
+	});
+	if (r.status === 401) throw new Error('坚果云账号或应用密码不正确');
+	if (r.status >= 400) throw new Error(`云端写入失败（HTTP ${r.status}）`);
 }

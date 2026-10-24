@@ -20,6 +20,7 @@ import { requestText } from '../core/http.js';
 // 书籍身份口径（唯一来源）：书名/作者/书源的归一化与「同一本书」判定
 import { bookIdentityKey, bookKeyOfParts, bookTitleSourceKey, findSameBookRecord, normalizeBookFields, normalizeTitle, pickMostRecent, authorsCompatible } from './book-identity.js';
 import { reconcileDuplicateBooks } from './reconcile.js';
+import { isFileSyncEnabled, davReadText, davWriteText } from './book-files.js';
 
 const CFG_KEY = 'zj-sync-v1';
 const GIST_DESC = 'zhijian-sync-v1';
@@ -27,7 +28,7 @@ const GIST_FILE = 'zhijian-sync.json';
 const DATA_VERSION = 2;
 const API = 'https://api.github.com';
 
-const DEFAULTS = { enabled: false, token: '', gistId: '', login: '', lastSyncAt: 0, lastResult: '', lastPushFp: '' };
+const DEFAULTS = { enabled: false, transport: 'gist', token: '', gistId: '', login: '', lastSyncAt: 0, lastResult: '', lastPushFp: '' };
 
 export function loadSyncConfig() {
 	try {
@@ -48,7 +49,10 @@ export function saveSyncConfig(patch) {
 
 export function isSyncEnabled() {
 	const c = loadSyncConfig();
-	return !!(c.enabled && c.token);
+	if (!c.enabled) return false;
+	// 坚果云通道复用「本地书文件同步」的账号，不需要 GitHub token
+	if (c.transport === 'dav') return isFileSyncEnabled();
+	return !!c.token;
 }
 
 /**
@@ -161,7 +165,14 @@ async function createSyncGist(token, snapshot) {
 	return g.id;
 }
 
-async function readRemote(token, gistId) {
+async function readRemote(cfg) {
+	if (cfg.transport === 'dav') {
+		const text = await davReadText(GIST_FILE);
+		if (!text) return null;
+		try { return JSON.parse(text); } catch { return null; }
+	}
+	const token = cfg.token;
+	const gistId = cfg.gistId;
 	const g = await gh(token, `/gists/${gistId}`);
 	const file = g.files?.[GIST_FILE];
 	if (!file) return null;
@@ -177,8 +188,12 @@ async function readRemote(token, gistId) {
 	}
 }
 
-async function writeRemote(token, gistId, snapshot) {
-	await gh(token, `/gists/${gistId}`, {
+async function writeRemote(cfg, snapshot) {
+	if (cfg.transport === 'dav') {
+		await davWriteText(GIST_FILE, JSON.stringify(snapshot));
+		return;
+	}
+	await gh(cfg.token, `/gists/${cfg.gistId}`, {
 		method: 'PATCH',
 		body: { files: { [GIST_FILE]: { content: JSON.stringify(snapshot) } } }
 	});
@@ -743,9 +758,17 @@ async function applySnapshotToLocal(merged, local) {
 // ============================================================
 
 /** 开启同步：校验 token → 查找/创建中转 Gist → 立即执行一轮完整同步 */
+/** 用坚果云开启跨设备同步（复用本地书文件同步的账号，无需 GitHub token） */
+export async function enableDavSync() {
+	if (!isFileSyncEnabled()) throw new Error('请先在「本地书文件同步」里配置好坚果云账号');
+	saveSyncConfig({ enabled: true, transport: 'dav' });
+	const result = await syncNow();
+	return { login: '坚果云', ...result };
+}
+
 export async function enableSync(token) {
 	const login = await verifyToken(token);
-	saveSyncConfig({ token, login, enabled: true });
+	saveSyncConfig({ token, login, enabled: true, transport: 'gist' });
 	try {
 		const result = await syncNow();
 		return { login, ...result };
@@ -786,13 +809,19 @@ export function syncNow() {
 
 async function doSyncNow() {
 	const cfg = loadSyncConfig();
-	if (!cfg.enabled || !cfg.token) throw new Error('同步未开启');
+	if (!cfg.enabled) throw new Error('同步未开启');
+	const isDav = cfg.transport === 'dav';
+	if (isDav) {
+		if (!isFileSyncEnabled()) throw new Error('坚果云同步未配置（先在「本地书文件同步」里填好账号）');
+	} else if (!cfg.token) {
+		throw new Error('同步未开启');
+	}
 	const token = cfg.token;
 	const emptyApplied = { books: 0, progress: 0, bookmarks: 0 };
 
-	// 1. 确保有中转 Gist（没有则查找账户里已有的；再没有才创建）
+	// 1. 确保有中转 Gist（坚果云通道直读云端 JSON，不需要 Gist）
 	let gistId = cfg.gistId;
-	if (!gistId) {
+	if (!isDav && !gistId) {
 		gistId = await findSyncGist(token);
 		if (!gistId) {
 			const local = await buildLocalSnapshot();
@@ -806,15 +835,15 @@ async function doSyncNow() {
 	// 2. 拉取远端
 	let remote = null;
 	try {
-		remote = await readRemote(token, gistId);
+		remote = await readRemote({ ...cfg, gistId });
 	} catch (e) {
-		if (e.status === 404) {
+		if (!isDav && e.status === 404) {
 			// gist 被删除 → 重新查找或重建
 			const found = await findSyncGist(token);
 			if (found) {
 				gistId = found;
 				saveSyncConfig({ gistId });
-				remote = await readRemote(token, gistId);
+				remote = await readRemote({ ...cfg, gistId });
 			} else {
 				const local = await buildLocalSnapshot();
 				gistId = await createSyncGist(token, local);
@@ -854,9 +883,9 @@ async function doSyncNow() {
 
 	merged.updatedAt = Date.now();
 	try {
-		await writeRemote(token, gistId, merged);
+		await writeRemote({ ...cfg, gistId }, merged);
 	} catch (e) {
-		if (e.status === 404) {
+		if (!isDav && e.status === 404) {
 			gistId = await createSyncGist(token, merged);
 			saveSyncConfig({ gistId });
 		} else {

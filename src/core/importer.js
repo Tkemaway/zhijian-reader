@@ -1,3 +1,4 @@
+import { cleanMetaText } from './text-clean.js';
 /**
  * 本地书籍导入 —— TXT / EPUB 解析
  *
@@ -109,8 +110,10 @@ export function parseEpub(buffer, DOMParserImpl) {
 
 	// 元数据用正则提取（跨解析器对 XML 命名空间的处理差异更稳）
 	const grab = (re) => ((opf.match(re) || [])[1] || '').trim();
-	const title = grab(/<dc:title[^>]*>([\s\S]*?)<\/dc:title>/i) || (opfDoc.querySelector('title')?.textContent || '').trim();
-	const author = grab(/<dc:creator[^>]*>([\s\S]*?)<\/dc:creator>/i) || (opfDoc.querySelector('creator')?.textContent || '').trim();
+	// 书名/作者常带 HTML 实体（甚至双重转义）与内嵌标签，统一清洗后再用
+	const stripTags = (v) => String(v || '').replace(/<[^>]*>/g, '');
+	const title = cleanMetaText(stripTags(grab(/<dc:title[^>]*>([\s\S]*?)<\/dc:title>/i) || opfDoc.querySelector('title')?.textContent || ''));
+	const author = cleanMetaText(stripTags(grab(/<dc:creator[^>]*>([\s\S]*?)<\/dc:creator>/i) || opfDoc.querySelector('creator')?.textContent || ''));
 
 	const manifest = new Map();
 	for (const item of opfDoc.querySelectorAll('manifest > item')) {
@@ -230,7 +233,11 @@ export function parseTxt(buffer, filename = '') {
 	})).filter((c) => c.paragraphs.length);
 
 	if (!out.length) throw new Error('TXT 中没有解析到正文');
-	return { title: titleFromPre || cleanTitle || '未命名书籍', author: authorFromPre, chapters: out };
+	return {
+		title: cleanMetaText(titleFromPre || cleanTitle || '未命名书籍'),
+		author: cleanMetaText(authorFromPre),
+		chapters: out
+	};
 }
 
 /** 按文件扩展名分派解析 */

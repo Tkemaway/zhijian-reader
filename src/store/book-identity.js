@@ -16,6 +16,8 @@
  * 零依赖纯函数，便于在 Node 中直接单测。
  */
 /** 身份键分隔符（控制字符，正常书名不会包含） */
+import { cleanMetaText } from '../core/text-clean.js';
+
 export const KEY_SEP = String.fromCharCode(1);
 
 /** 全部「空白」类码位：ASCII 空白 + 各类 Unicode 空格/行分隔符 */
@@ -58,7 +60,7 @@ export function normalizeText(value) {
  * 导致同一本书在两次归一化后得到不同结果（键漂移 → 同步重复建书）。
  */
 export function normalizeTitle(title) {
-	let s = normalizeText(title);
+	let s = normalizeText(cleanMetaText(title));
 	if (!s) return '';
 	for (let i = 0; i < 4; i++) {
 		const next = normalizeText(s.replace(TITLE_WRAP_RE, ''));
@@ -71,7 +73,7 @@ export function normalizeTitle(title) {
 
 /** 作者归一化：去「作者：」前缀、去包裹符、去空白 */
 export function normalizeAuthor(author) {
-	let s = normalizeText(author);
+	let s = normalizeText(cleanMetaText(author));
 	if (!s) return '';
 	s = normalizeText(s.replace(AUTHOR_PREFIX_RE, ''));
 	for (let i = 0; i < 4; i++) {

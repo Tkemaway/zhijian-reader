@@ -5,7 +5,7 @@ import sources from '../core/sources.js';
 import { loadSettings, saveSettings, applyPaperInkPreset, getWeekData, getTodaySeconds, getLimitStateWithExtra, fmtDuration } from '../store/stats.js';
 import { keepAwake } from '../store/wakelock.js';
 import { getBooks } from '../store/db.js';
-import { loadSyncConfig, enableSync, disableSync, syncNow, getPendingLocalDownloads } from '../store/sync.js';
+import { loadSyncConfig, isSyncEnabled, enableSync, enableDavSync, disableSync, syncNow, getPendingLocalDownloads } from '../store/sync.js';
 import {
 	loadFileSyncConfig, saveFileSyncConfig, isFileSyncEnabled,
 	uploadAllPending, downloadAndImport, testFileSyncConnection, JIANGUOYUN_DAV
@@ -387,11 +387,14 @@ function showSyncPanel(container, onChanged) {
 	showSheet({
 		title: '跨设备同步',
 		build: (body, close) => {
-			if (cfg.enabled && cfg.token) {
-				// 已开启：状态 + 三个操作
+			if (isSyncEnabled()) {
+				// 已开启：状态 + 操作
+				const chan = cfg.transport === 'dav'
+					? '坚果云 WebDAV'
+					: `GitHub @${escapeHtml(cfg.login || 'github')}`;
 				const info = document.createElement('div');
 				info.style.cssText = 'font-size:13px;line-height:2;color:var(--ink-2);margin-bottom:14px';
-				info.innerHTML = `GitHub 账号：<b style="color:var(--ink)">@${escapeHtml(cfg.login || 'github')}</b><br>
+				info.innerHTML = `同步通道：<b style="color:var(--ink)">${chan}</b><br>
 					上次同步：${cfg.lastSyncAt ? new Date(cfg.lastSyncAt).toLocaleString('zh-CN') : '尚未同步'}${cfg.lastResult ? `<br>结果：${escapeHtml(cfg.lastResult)}` : ''}`;
 				body.appendChild(info);
 
@@ -446,11 +449,13 @@ function showSyncPanel(container, onChanged) {
 				const retokenBtn = document.createElement('button');
 				retokenBtn.className = 'btn btn-soft btn-block';
 				retokenBtn.style.marginTop = '10px';
-				retokenBtn.textContent = '更换 Token';
-				retokenBtn.onclick = () => {
-					close();
-					showTokenForm(container, onChanged);
-				};
+				if (cfg.transport === 'dav') {
+					retokenBtn.textContent = '坚果云账号设置';
+					retokenBtn.onclick = () => { close(); showFileSyncPanel(container, onChanged); };
+				} else {
+					retokenBtn.textContent = '更换 Token';
+					retokenBtn.onclick = () => { close(); showTokenForm(container, onChanged); };
+				}
 				body.appendChild(retokenBtn);
 
 				const offBtn = document.createElement('button');
@@ -477,8 +482,61 @@ function showSyncPanel(container, onChanged) {
 				body.appendChild(offBtn);
 			} else {
 				close();
-				showTokenForm(container, onChanged);
+				showSyncChooser(container, onChanged);
 			}
+		}
+	});
+}
+
+/**
+ * 选择同步通道：
+ *   坚果云 WebDAV —— 复用本地书同步的账号，国内直连快（推荐）
+ *   GitHub Gist  —— 免费，但国内拉取经常几十 KB/s
+ */
+function showSyncChooser(container, onChanged) {
+	const davReady = isFileSyncEnabled();
+	showSheet({
+		title: '开启跨设备同步',
+		build: (body, close) => {
+			const hint = document.createElement('p');
+			hint.className = 'setting-hint';
+			hint.style.cssText = 'margin-bottom:14px;line-height:1.75';
+			hint.innerHTML = '同步书架、阅读进度、书签与阅读时长。<br>两个通道选一个即可：坚果云走国内线路，速度明显更快。';
+			body.appendChild(hint);
+
+			const davBtn = document.createElement('button');
+			davBtn.className = davReady ? 'btn btn-primary btn-block' : 'btn btn-soft btn-block';
+			davBtn.textContent = davReady ? '用坚果云同步（推荐 · 速度快）' : '用坚果云同步（先配置网盘）';
+			davBtn.onclick = async () => {
+				if (!davReady) {
+					close();
+					showFileSyncPanel(container, onChanged);
+					return;
+				}
+				davBtn.disabled = true;
+				davBtn.textContent = '首次同步中…';
+				try {
+					await enableDavSync();
+					toast('已开启 · 坚果云通道');
+					close();
+					onChanged?.();
+				} catch (e) {
+					toast(`开启失败：${e.message || e}`, 2800);
+					davBtn.disabled = false;
+					davBtn.textContent = '用坚果云同步（推荐 · 速度快）';
+				}
+			};
+			body.appendChild(davBtn);
+
+			const ghBtn = document.createElement('button');
+			ghBtn.className = 'btn btn-soft btn-block';
+			ghBtn.style.marginTop = '10px';
+			ghBtn.textContent = '用 GitHub 同步（免费 · 国内较慢）';
+			ghBtn.onclick = () => {
+				close();
+				showTokenForm(container, onChanged);
+			};
+			body.appendChild(ghBtn);
 		}
 	});
 }
