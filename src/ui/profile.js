@@ -417,6 +417,8 @@ function showSyncPanel(container, onChanged) {
 							syncBtn.textContent = '同步本地书文件…';
 							const up = await uploadAllPending({ onProgress: (m) => { if (syncBtn.isConnected) syncBtn.textContent = m; } });
 							if (up.uploaded) bits.push(`本地书上传 ${up.uploaded} 本`);
+							if (up.failed) bits.push(`本地书失败 ${up.failed} 本`);
+							if (up.missing?.length) bits.push(`缺原文件 ${up.missing.length} 本`);
 							const pend = getPendingLocalDownloads();
 							if (pend.length) {
 								const down = await downloadAndImport(pend, { onProgress: (m) => { if (syncBtn.isConnected) syncBtn.textContent = m; } });
@@ -592,6 +594,25 @@ function showFileSyncPanel(container, onChanged) {
 			refreshHint();
 			body.appendChild(urlHint);
 
+			// 明确告诉用户：书架上到底有几本本地书、传了几本
+			const countLine = document.createElement('p');
+			countLine.className = 'setting-hint';
+			countLine.style.marginTop = '6px';
+			countLine.textContent = '正在统计书架上的本地书…';
+			getBooks().then((all) => {
+				if (!countLine.isConnected) return;
+				const locals = all.filter((b) => b.sourceId === 'local');
+				if (!locals.length) {
+					countLine.textContent = '书架上的书都来自在线书源，不需要传文件；导入的 EPUB/TXT 才会同步';
+					return;
+				}
+				const uploaded = locals.filter((b) => b.fileUploadedAt).length;
+				countLine.textContent = `本地书 ${locals.length} 本 · 已上传 ${uploaded} 本${uploaded < locals.length ? '（点下方按钮上传）' : ''}`;
+			}).catch(() => { countLine.remove(); });
+			body.appendChild(countLine);
+
+
+
 			const status = document.createElement('p');
 			status.className = 'setting-hint';
 			status.style.marginTop = '10px';
@@ -613,9 +634,14 @@ function showFileSyncPanel(container, onChanged) {
 						enabled: true
 					});
 					await testFileSyncConnection();
-					toast('连接成功，本地书会在同步时自动上传');
+					toast('连接成功，正在上传现有本地书…');
 					close();
 					onChanged?.();
+					// 配置好就立刻把书架上的本地书传上去（旧书会用缓存章节重新打包）
+					uploadAllPending({}).then((r) => {
+						if (r.uploaded) toast(`已上传 ${r.uploaded} 本本地书`, 2600);
+						else if (r.failed || r.missing?.length) toast(`上传完成：失败 ${r.failed} 本${r.missing?.length ? `、缺原文件 ${r.missing.length} 本` : ''}`, 3200);
+					}).catch(() => {});
 				} catch (e) {
 					saveFileSyncConfig({ enabled: false });
 					status.textContent = `连接失败：${e.message || e}`;
@@ -633,7 +659,8 @@ function showFileSyncPanel(container, onChanged) {
 				upBtn.disabled = true;
 				try {
 					const r = await uploadAllPending({ onProgress: (m) => { if (upBtn.isConnected) upBtn.textContent = m; } });
-					toast(r.uploaded ? `已上传 ${r.uploaded} 本${r.failed ? ` · 失败 ${r.failed}` : ''}` : (r.failed ? `上传失败 ${r.failed} 本` : '没有待上传的书'), 2600);
+					const extra = [r.failed ? `失败 ${r.failed}` : '', r.missing?.length ? `缺原文件 ${r.missing.length}` : ''].filter(Boolean).join(' · ');
+					toast(r.uploaded ? `已上传 ${r.uploaded} 本${extra ? ` · ${extra}` : ''}` : (extra ? `上传完成 · ${extra}` : '没有待上传的书'), 3000);
 				} catch (e) {
 					toast(`上传失败：${e.message || e}`, 2600);
 				}

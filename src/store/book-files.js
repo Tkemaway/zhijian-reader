@@ -13,10 +13,11 @@
  */
 import { requestBytes, requestText } from '../core/http.js';
 import {
-	getBooks, updateBook, addBook, saveToc, saveChapters,
+	getBooks, getBook, updateBook, addBook, saveToc, saveChapters, getToc, getChapter,
 	saveBookFile, getBookFile, hasBookFile
 } from './db.js';
 import { parseBookFile } from '../core/importer.js';
+import { buildEpubFromChapters, epubFileName } from '../core/epub-build.js';
 
 const CFG_KEY = 'zj-files-v1';
 /**
@@ -293,15 +294,49 @@ export async function uploadLocalBookFile(book, { force = false } = {}) {
 }
 
 /** 批量上传所有待同步的本地书 */
+/**
+ * 给"没有原文件"的旧本地书重建一个 EPUB（用已缓存的章节）
+ * @returns {Promise<object|null>} 更新后的书籍记录
+ */
+async function rebuildLocalFile(book) {
+	const toc = (await getToc(book.id)) || [];
+	if (!toc.length) return null;
+	const chapters = [];
+	for (let i = 0; i < toc.length; i++) {
+		const ch = await getChapter(book.id, i);
+		if (ch?.paragraphs?.length) {
+			chapters.push({ title: ch.title || toc[i]?.title || `第 ${i + 1} 章`, paragraphs: ch.paragraphs });
+		}
+	}
+	if (!chapters.length) return null;
+	const bytes = buildEpubFromChapters({ title: book.title, author: book.author, id: book.id, chapters });
+	await rememberImportedFile(book, { bytes, fileName: epubFileName(book.title) });
+	return getBook(book.id);
+}
+
+/**
+ * 批量上传所有待同步的本地书。
+ * 旧版本导入的书没有原文件 → 自动用已缓存章节重新打包成 EPUB 再上传。
+ * @returns {{uploaded:number, failed:number, skipped:number, total:number, missing:string[]}}
+ */
 export async function uploadAllPending({ onProgress } = {}) {
 	const cfg = loadFileSyncConfig();
-	if (!isFileSyncEnabled()) return { uploaded: 0, failed: 0, skipped: 0, total: 0 };
-	const locals = (await getBooks()).filter((b) => b.sourceId === 'local' && b.fileHash);
+	if (!isFileSyncEnabled()) return { uploaded: 0, failed: 0, skipped: 0, total: 0, missing: [] };
+	const locals = (await getBooks()).filter((b) => b.sourceId === 'local');
 	const pending = locals.filter((b) => !b.fileUploadedAt);
 	let uploaded = 0;
 	let failed = 0;
-	for (const b of pending) {
+	const missing = [];
+	for (const raw of pending) {
+		let b = raw;
 		try {
+			// 旧版本导入的书没有原文件 → 先打包成 EPUB
+			if (!b.fileHash) {
+				onProgress?.(`正在打包《${b.title}》`, uploaded, pending.length);
+				const rebuilt = await rebuildLocalFile(b);
+				if (!rebuilt?.fileHash) { missing.push(b.title || '未命名'); continue; }
+				b = rebuilt;
+			}
 			onProgress?.(`正在上传《${b.title}》`, uploaded, pending.length);
 			await uploadLocalBookFile(b, { force: true });
 			uploaded++;
@@ -309,7 +344,7 @@ export async function uploadAllPending({ onProgress } = {}) {
 			failed++;
 		}
 	}
-	return { uploaded, failed, skipped: locals.length - pending.length, total: locals.length };
+	return { uploaded, failed, skipped: locals.length - pending.length, total: locals.length, missing };
 }
 
 /** 下载并导入云端本地书（items 来自同步快照的待下载列表） */

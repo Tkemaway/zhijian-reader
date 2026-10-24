@@ -78,6 +78,20 @@ check('云端收到文件', files.size === 1, JSON.stringify([...files.keys()]))
 check('写入 zhijian/ 目录且带哈希前缀', /^zhijian\/zhijian-[0-9a-f]{16}-/.test(remoteKey), remoteKey);
 check('内容一致', Buffer.from(files.get(remoteKey)).toString() === 'EPUB-CONTENT-1234');
 
+console.log('== 旧本地书（无原文件）自动打包上传 ==');
+const before = new Set(files.keys());
+await db.addBook({ id: 'l2', title: '旧书', author: '作者乙', sourceId: 'local', totalChapters: 2 });
+await db.saveToc('l2', [{ title: '第一章', url: '' }, { title: '第二章', url: '' }]);
+await db.saveChapters('l2', [
+	{ idx: 0, title: '第一章', paragraphs: ['第一段'], url: '', totalChars: 3 },
+	{ idx: 1, title: '第二章', paragraphs: ['第二段'], url: '', totalChars: 3 }
+]);
+const up = await bf.uploadAllPending({});
+const l2 = await db.getBook('l2');
+check('自动打包并上传成功', up.uploaded === 1 && !!l2.fileHash && l2.fileUploadedAt > 0, JSON.stringify(up));
+const added = [...files.keys()].filter((k) => !before.has(k));
+check('云端出现该书 EPUB', added.some((k) => k.endsWith('.epub')), JSON.stringify(added));
+
 console.log('== JSON 快照读写 ==');
 await bf.davWriteText('zhijian-sync.json', JSON.stringify({ hello: '世界' }));
 const back = await bf.davReadText('zhijian-sync.json');
