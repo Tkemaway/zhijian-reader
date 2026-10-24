@@ -261,6 +261,17 @@ async function importParsedBook({ parsed, name, hash, remoteName, size }) {
 	return saved;
 }
 
+/** 从字节导入一本书（链接下载 / 云端下载共用），并记住原文件供同步 */
+export async function importBookFromBytes(bytes, fileName) {
+	const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+	const buf = arr.buffer.slice(arr.byteOffset, arr.byteOffset + arr.byteLength);
+	const parsed = parseBookFile(buf, fileName, typeof DOMParser !== 'undefined' ? DOMParser : undefined);
+	if (!parsed?.chapters?.length) throw new Error('无法解析这个文件');
+	const saved = await importParsedBook({ parsed, name: fileName, hash: '', remoteName: '', size: buf.byteLength });
+	await rememberImportedFile({ ...saved, id: saved.id }, { bytes: arr, fileName }).catch(() => {});
+	return saved;
+}
+
 /** 导入时记住原始文件（供跨设备同步；失败不影响导入本身） */
 export async function rememberImportedFile(book, { bytes, fileName }) {
 	try {

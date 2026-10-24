@@ -10,6 +10,7 @@ import { reconcileDuplicateBooks } from './store/reconcile.js';
 import { renderLibrary } from './ui/library.js';
 import { renderSearch } from './ui/search.js';
 import { renderProfile } from './ui/profile.js';
+import { renderLocal } from './ui/local.js';
 import { renderReader, unmountReader } from './ui/reader.js';
 
 export const app = {
@@ -50,8 +51,9 @@ export const app = {
 				<div class="page page-enter" id="page-container"></div>
 				<nav class="tabbar" id="tabbar">
 					<div class="tabbar-inner">
-						<button class="tab-item" data-route="library">${icon('library', 24)}<span>书架</span></button>
 						<button class="tab-item" data-route="search">${icon('search', 24)}<span>书海</span></button>
+						<button class="tab-item" data-route="library">${icon('library', 24)}<span>书架</span></button>
+						<button class="tab-item" data-route="local">${icon('folder', 24)}<span>本地</span></button>
 						<button class="tab-item" data-route="profile">${icon('user', 24)}<span>我的</span></button>
 					</div>
 				</nav>
@@ -79,6 +81,7 @@ export const app = {
 		container.classList.add('page-enter');
 		if (route === 'library') await renderLibrary(container, this);
 		else if (route === 'search') await renderSearch(container, this);
+		else if (route === 'local') await renderLocal(container, this);
 		else if (route === 'profile') await renderProfile(container, this);
 	},
 

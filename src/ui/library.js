@@ -343,7 +343,7 @@ function pickActiveVariant(variants) {
  * 结构：封面 2:3（唯一主角）→ 2px 进度线 → 书名（2 行固定槽）→ 作者（1 行固定）
  * 角标最多一个（多书源时显示「N源」），默认沉默。
  */
-function bookCard(book, app, variants = null, selState = null) {
+export function bookCard(book, app, variants = null, selState = null) {
 	const el = document.createElement('div');
 	el.className = 'book-card';
 	el.dataset.bookId = book.id;
@@ -390,7 +390,7 @@ function bookCard(book, app, variants = null, selState = null) {
 	return el;
 }
 
-function showBookActions(book, app, variants = null) {
+export function showBookActions(book, app, variants = null) {
 	showSheet({
 		title: book.title,
 		build: (body, close) => {
@@ -517,7 +517,7 @@ export function escapeHtml(s) {
 //  本地书导入（TXT / EPUB）
 // ============================================================
 
-async function importLocalBook(file, app) {
+export async function importLocalBook(file, app) {
 	const name = file.name || '本地书籍';
 	toast(`正在导入《${name}》…`, 3000);
 	try {
