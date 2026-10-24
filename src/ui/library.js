@@ -7,6 +7,7 @@ import { getLimitStateWithExtra, fmtDuration, getTodaySeconds } from '../store/s
 import { icon, toast, showDialog, showSheet, coverGradient } from './kit.js';
 import { openSourceSwitcher } from './source-switch.js';
 import { rememberImportedFile, uploadLocalBookFile, isFileSyncEnabled } from '../store/book-files.js';
+import { kickAutoSync } from '../store/auto-sync.js';
 import { parseBookFile } from '../core/importer.js';
 
 /**
@@ -545,6 +546,7 @@ async function importLocalBook(file, app) {
 				}
 			})
 			.catch(() => {});
+		kickAutoSync(); // 导入完自动同步一次（3 秒内多次导入会合并）
 		app.refresh();
 	} catch (e) {
 		console.error(e);

@@ -44,6 +44,8 @@ globalThis.localStorage = {
 const id = (p) => pathToFileURL(path.join(__dirname, '..', 'src', p)).href;
 const db = await import(id('store/db.js'));
 const bf = await import(id('store/book-files.js'));
+const sync = await import(id('store/sync.js'));
+const auto = await import(id('store/auto-sync.js'));
 
 let pass = 0, fail = 0;
 const check = (name, cond, extra = '') => {
@@ -102,6 +104,21 @@ console.log('== 错误提示 ==');
 bf.saveFileSyncConfig({ pass: 'wrong', enabled: true });
 try { await bf.testFileSyncConnection(); check('错误密码应抛错', false); }
 catch (e) { check('错误密码给出 401 提示', /401|不正确/.test(String(e.message)), e.message); }
+
+console.log('== 自动同步：只配了网盘、没开同步 ==');
+bf.saveFileSyncConfig({ pass: 'app-pass', user: 'me@example.com', url: 'http://127.0.0.1:18080/dav/', enabled: true });
+sync.saveSyncConfig({ enabled: false, transport: 'gist', autoDisabled: false });
+const before2 = new Set(files.keys());
+const res = await auto.runAutoSync({ force: true, reason: 'test' });
+check('自动开启了同步', sync.isSyncEnabled() === true, JSON.stringify({ enabled: sync.loadSyncConfig().enabled }));
+check('自动选用坚果云通道', sync.loadSyncConfig().transport === 'dav', sync.loadSyncConfig().transport);
+check('云端出现快照', [...files.keys()].some((k) => k.endsWith('zhijian-sync.json')), JSON.stringify([...files.keys()].filter((k) => !before2.has(k))));
+check('返回结果包含上传数', typeof res?.uploaded === 'number', JSON.stringify(res));
+
+console.log('== 手动关闭后不再自动开启 ==');
+sync.disableSync();
+await auto.runAutoSync({ force: true, reason: 'test' });
+check('用户关掉后保持关闭', sync.isSyncEnabled() === false);
 
 server.close();
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`);

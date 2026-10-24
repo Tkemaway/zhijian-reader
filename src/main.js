@@ -3,9 +3,9 @@
  * 页面切换采用交叉淡化过渡；tab 栏常驻不重建
  */
 import './app.css';
-import { icon, applyInkMode } from './ui/kit.js';
+import { icon, toast, applyInkMode } from './ui/kit.js';
 import { loadSettings } from './store/stats.js';
-import { isSyncEnabled, syncNow } from './store/sync.js';
+import { startAutoSync } from './store/auto-sync.js';
 import { reconcileDuplicateBooks } from './store/reconcile.js';
 import { renderLibrary } from './ui/library.js';
 import { renderSearch } from './ui/search.js';
@@ -137,8 +137,6 @@ reconcileDuplicateBooks()
 	.catch(() => { /* 整理失败不影响启动 */ });
 
 // 跨设备同步：已开启时启动即静默拉取一次（尽早，保证打开书前进度已是最新）
-if (isSyncEnabled()) {
-	setTimeout(() => {
-		syncNow().catch(() => { /* 静默：离线或 token 失效时用户可在设置中查看 */ });
-	}, 300);
-}
+// 自动同步：启动、回到前台、网络恢复、每 5 分钟各跑一轮
+// （配置了坚果云但没开同步时会自动开启；本地书自动上传/下载）
+startAutoSync({ notify: (msg) => toast(msg, 2200) });

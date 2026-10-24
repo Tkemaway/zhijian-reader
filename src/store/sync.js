@@ -761,14 +761,14 @@ async function applySnapshotToLocal(merged, local) {
 /** 用坚果云开启跨设备同步（复用本地书文件同步的账号，无需 GitHub token） */
 export async function enableDavSync() {
 	if (!isFileSyncEnabled()) throw new Error('请先在「本地书文件同步」里配置好坚果云账号');
-	saveSyncConfig({ enabled: true, transport: 'dav' });
+	saveSyncConfig({ enabled: true, transport: 'dav', autoDisabled: false });
 	const result = await syncNow();
 	return { login: '坚果云', ...result };
 }
 
 export async function enableSync(token) {
 	const login = await verifyToken(token);
-	saveSyncConfig({ token, login, enabled: true, transport: 'gist' });
+	saveSyncConfig({ token, login, enabled: true, transport: 'gist', autoDisabled: false });
 	try {
 		const result = await syncNow();
 		return { login, ...result };
@@ -780,7 +780,8 @@ export async function enableSync(token) {
 }
 
 export function disableSync() {
-	return saveSyncConfig({ enabled: false });
+	// 手动关闭后不再被自动开启（auto-sync 会检查这个标记）
+	return saveSyncConfig({ enabled: false, autoDisabled: true });
 }
 
 /** 核心同步：拉取远端 → 合并 → 应用较新条目 → 推回远端 */

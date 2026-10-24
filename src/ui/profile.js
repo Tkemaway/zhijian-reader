@@ -6,6 +6,7 @@ import { loadSettings, saveSettings, applyPaperInkPreset, getWeekData, getTodayS
 import { keepAwake } from '../store/wakelock.js';
 import { getBooks } from '../store/db.js';
 import { loadSyncConfig, isSyncEnabled, enableSync, enableDavSync, disableSync, syncNow, getPendingLocalDownloads } from '../store/sync.js';
+import { kickAutoSync } from '../store/auto-sync.js';
 import {
 	loadFileSyncConfig, saveFileSyncConfig, isFileSyncEnabled,
 	uploadAllPending, downloadAndImport, testFileSyncConnection, normalizeDavUrl, JIANGUOYUN_DAV
@@ -637,11 +638,8 @@ function showFileSyncPanel(container, onChanged) {
 					toast('连接成功，正在上传现有本地书…');
 					close();
 					onChanged?.();
-					// 配置好就立刻把书架上的本地书传上去（旧书会用缓存章节重新打包）
-					uploadAllPending({}).then((r) => {
-						if (r.uploaded) toast(`已上传 ${r.uploaded} 本本地书`, 2600);
-						else if (r.failed || r.missing?.length) toast(`上传完成：失败 ${r.failed} 本${r.missing?.length ? `、缺原文件 ${r.missing.length} 本` : ''}`, 3200);
-					}).catch(() => {});
+					// 配置好就交给自动同步：自动开启坚果云通道、上传本地书、下载云端缺书
+					kickAutoSync();
 				} catch (e) {
 					saveFileSyncConfig({ enabled: false });
 					status.textContent = `连接失败：${e.message || e}`;
