@@ -13,7 +13,6 @@ import { isSyncEnabled, syncNow, enableDavSync, getPendingLocalDownloads, loadSy
 import { isFileSyncEnabled, uploadAllPending, downloadAndImport } from './book-files.js';
 
 const MIN_GAP = 30 * 1000; // 非强制触发的最小间隔
-const INTERVAL = 5 * 60 * 1000; // 定时轮询
 
 let _timer = null;
 let _running = false;
@@ -96,9 +95,6 @@ export function startAutoSync({ notify } = {}) {
 
 	// 启动后稍等（让首屏渲染完成）再跑
 	setTimeout(() => { runAutoSync({ force: true, reason: 'boot' }).catch(() => {}); }, 2500);
-
-	// 定时轮询
-	_timer = setInterval(() => { runAutoSync({ reason: 'interval' }).catch(() => {}); }, INTERVAL);
 
 	// 回到前台
 	document.addEventListener('visibilitychange', () => {

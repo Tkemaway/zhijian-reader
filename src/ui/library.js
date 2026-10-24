@@ -7,7 +7,8 @@ import { getLimitStateWithExtra, fmtDuration, getTodaySeconds } from '../store/s
 import { icon, toast, showDialog, showSheet, coverGradient } from './kit.js';
 import { openSourceSwitcher } from './source-switch.js';
 import { rememberImportedFile, uploadLocalBookFile, isFileSyncEnabled } from '../store/book-files.js';
-import { kickAutoSync } from '../store/auto-sync.js';
+import { kickAutoSync, runAutoSync } from '../store/auto-sync.js';
+import { isSyncEnabled } from '../store/sync.js';
 import { parseBookFile } from '../core/importer.js';
 
 /**
@@ -28,6 +29,7 @@ export async function renderLibrary(container, app) {
 		<header class="shelf-top">
 			<h1 class="shelf-title">书架</h1>
 			<div class="shelf-tools">
+				<button class="shelf-tool shelf-sync" id="sync-btn" aria-label="立即同步" title="立即同步">${icon('refresh', 18)}</button>
 				<button class="shelf-tool" id="manage-btn">管理</button>
 				<button class="shelf-tool" id="import-btn">导入</button>
 			</div>
@@ -60,6 +62,30 @@ export async function renderLibrary(container, app) {
 		const file = fileInput.files?.[0];
 		fileInput.value = '';
 		if (file) await importLocalBook(file, app);
+	});
+
+	// 立即同步（不用进设置页）
+	const syncBtn = container.querySelector('#sync-btn');
+	syncBtn.addEventListener('click', async () => {
+		if (syncBtn.classList.contains('is-busy')) return;
+		if (!isFileSyncEnabled() && !isSyncEnabled()) {
+			toast('先在「我的 → 数据同步」里配置坚果云', 2600);
+			return;
+		}
+		syncBtn.classList.add('is-busy');
+		try {
+			const r = await runAutoSync({ force: true, reason: 'manual' });
+			if (!r) { toast('同步进行中…', 1600); return; }
+			const bits = [];
+			if (r?.uploaded) bits.push(`上传 ${r.uploaded} 本`);
+			if (r?.downloaded) bits.push(`下载 ${r.downloaded} 本`);
+			toast(bits.length ? `同步完成 · ${bits.join(' · ')}` : '同步完成 · 已是最新', 2200);
+			if (r?.downloaded) app.refresh();
+		} catch (e) {
+			toast(`同步失败：${e.message || e}`, 2600);
+		} finally {
+			syncBtn.classList.remove('is-busy');
+		}
 	});
 
 	// 今日阅读状态

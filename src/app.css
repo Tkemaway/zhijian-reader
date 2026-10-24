@@ -568,6 +568,18 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 	padding: 8px 10px; border-radius: 8px;
 }
 .shelf-tool:active { background: var(--elev-2); }
+/* 书架页的「立即同步」小按钮：同步时图标转起来 */
+.shelf-sync {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 34px;
+	padding: 8px 0;
+	color: var(--ink-2);
+}
+.shelf-sync svg { display: block; }
+.shelf-sync.is-busy svg { animation: shelf-spin 0.9s linear infinite; }
+@keyframes shelf-spin { to { transform: rotate(360deg); } }
 
 .shelf-chips { display: flex; align-items: center; gap: 8px; margin: 14px 0 2px; }
 .chip {
