@@ -145,46 +145,66 @@ img { display: block; max-width: 100%; }
 }
 
 /* ---------- 底部导航（毛玻璃） ---------- */
+/* 悬浮胶囊导航（参考 Wenku8 Flutter 的 GlassDock：
+   高 54 / 圆角 27 / 每项 61 宽 / 图标 20 / 文字 11 / 底部 12×1.5 指示条） */
 .tabbar {
 	position: fixed;
-	left: 0; right: 0; bottom: 0;
+	left: 50%;
+	bottom: calc(12px + var(--sab));
+	transform: translateX(-50%);
 	z-index: 100;
-	display: flex;
-	justify-content: space-around;
-	align-items: center;
-	padding: 8px 24px calc(8px + var(--sab));
-	background: rgba(250, 248, 245, 0.82);
-	backdrop-filter: blur(24px) saturate(180%);
-	-webkit-backdrop-filter: blur(24px) saturate(180%);
-	border-top: 0.5px solid var(--line);
+	padding: 3px 6px;
+	border-radius: 27px;
+	background: rgba(250, 248, 245, 0.78);
+	backdrop-filter: blur(24px) saturate(170%);
+	-webkit-backdrop-filter: blur(24px) saturate(170%);
+	border: 0.5px solid rgba(28, 28, 30, 0.07);
+	box-shadow:
+		0 12px 30px rgba(40, 30, 15, 0.16),
+		inset 0 1px 0 rgba(255, 255, 255, 0.6);
+	transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease);
+	touch-action: none; /* 让底栏上的横向滑动不被页面滚动吃掉 */
+}
+/* 按下时整体轻微压扁放大（对齐源项目的 press 反馈） */
+.tabbar.is-pressing {
+	transform: translateX(-50%) scale(1.02, 1.05);
+	box-shadow:
+		0 16px 36px rgba(40, 30, 15, 0.2),
+		inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
 .tab-item {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
+	justify-content: center;
+	width: 61px;
+	height: 48px;
 	gap: 3px;
+	padding: 0;
 	color: var(--ink-3);
-	font-size: 10.5px;
+	font-size: 11px;
 	font-weight: 500;
-	letter-spacing: 0.03em;
-	transition: color 0.25s var(--ease);
-	padding: 4px 16px;
+	letter-spacing: 0.02em;
+	transition: color 0.22s var(--ease);
 	position: relative;
 }
-.tab-item svg { width: 24px; height: 24px; stroke-width: 1.7; }
-.tab-item.active { color: var(--ink); font-weight: 700; }
-/* 选中项下方的短横线（参考 Wenku8 的底栏） */
-.tab-item.active::after {
+.tab-item svg { width: 20px; height: 20px; stroke-width: 1.7; }
+.tab-item span { line-height: 1; }
+/* 底部指示条：选中才亮 */
+.tab-item::after {
 	content: '';
-	position: absolute;
-	left: 50%;
-	bottom: -1px;
-	transform: translateX(-50%);
-	width: 18px;
-	height: 2.5px;
-	border-radius: 2px;
-	background: var(--ink);
+	width: 12px;
+	height: 1.5px;
+	border-radius: 1px;
+	background: currentColor;
+	opacity: 0;
+	transition: opacity 0.22s var(--ease);
 }
+.tab-item.active { color: var(--ink); font-weight: 700; }
+.tab-item.active::after { opacity: 1; }
+/* 手指沿底栏滑动时的邻近高亮 */
+.tab-item.is-near { color: var(--ink-2); }
+.tab-item.is-near::after { opacity: 0.35; }
 
 /* ---------- 卡片 ---------- */
 .card {
@@ -822,10 +842,10 @@ body.ink-mode .sel-bar { background: #fbfaf7; backdrop-filter: none; }
 		box-shadow: 0 30px 90px rgba(28, 28, 30, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.05);
 	}
 	.tabbar {
-		width: 430px;
+		width: auto;
 		left: 50%;
 		transform: translateX(-50%);
-		border-radius: 0 0 28px 28px;
+		border-radius: 27px;
 	}
 	.sheet {
 		width: 414px;
@@ -878,7 +898,8 @@ body.ink-mode .tabbar {
 	background: #f4f3ed;
 	backdrop-filter: none;
 	-webkit-backdrop-filter: none;
-	border-top: 1px solid rgba(34, 33, 28, 0.14);
+	border: 1px solid rgba(34, 33, 28, 0.14);
+	box-shadow: 0 8px 20px rgba(34, 33, 28, 0.1);
 }
 body.ink-mode .sheet-mask,
 body.ink-mode .dialog-mask,
@@ -921,11 +942,7 @@ body.ink-mode .progress-fill { background: #3c3b34; }
 /* 平板/宽屏：Tab 栏内容居中限宽 */
 .tabbar-inner {
 	display: flex;
-	justify-content: space-around;
 	align-items: center;
-	width: 100%;
-	max-width: 560px;
-	margin: 0 auto;
 }
 
 /* 平板：卡片内边距更从容 */

@@ -51,8 +51,8 @@ export const app = {
 				<div class="page page-enter" id="page-container"></div>
 				<nav class="tabbar" id="tabbar">
 					<div class="tabbar-inner">
-						<button class="tab-item" data-route="search">${icon('search', 24)}<span>书海</span></button>
 						<button class="tab-item" data-route="library">${icon('library', 24)}<span>书架</span></button>
+						<button class="tab-item" data-route="search">${icon('search', 24)}<span>书海</span></button>
 						<button class="tab-item" data-route="local">${icon('folder', 24)}<span>本地</span></button>
 						<button class="tab-item" data-route="profile">${icon('user', 24)}<span>我的</span></button>
 					</div>
@@ -60,9 +60,57 @@ export const app = {
 			</div>`;
 		root.querySelectorAll('.tab-item').forEach((btn) => {
 			btn.addEventListener('click', () => {
+				// 刚在底栏上滑过 → 忽略这次点击（否则会跳回起点那页）
+				if (Date.now() - (this._dockSlideAt || 0) < 350) return;
 				if (this.state.route !== btn.dataset.route) this.go(btn.dataset.route);
 			});
 		});
+
+		// 手指沿底栏横向滑动切换页面（对齐源项目 GlassDock 的交互）
+		const dock = root.querySelector('#tabbar');
+		const tabs = [...dock.querySelectorAll('.tab-item')];
+		const indexAt = (x) => {
+			for (let i = 0; i < tabs.length; i++) {
+				const r = tabs[i].getBoundingClientRect();
+				if (x >= r.left && x <= r.right) return i;
+			}
+			return -1;
+		};
+		let pressing = false;
+		let startX = 0;
+		let hover = -1;
+		const clearNear = () => tabs.forEach((el) => el.classList.remove('is-near'));
+		dock.addEventListener('pointerdown', (e) => {
+			if (!e.target.closest('.tab-item')) return;
+			pressing = true;
+			startX = e.clientX;
+			hover = indexAt(e.clientX);
+			dock.classList.add('is-pressing');
+		});
+		dock.addEventListener('pointermove', (e) => {
+			if (!pressing) return;
+			const i = indexAt(e.clientX);
+			if (i === -1 || i === hover) return;
+			hover = i;
+			clearNear();
+			tabs[i]?.classList.add('is-near');
+		});
+		const finishPress = (e, cancelled = false) => {
+			if (!pressing) return;
+			pressing = false;
+			dock.classList.remove('is-pressing');
+			clearNear();
+			if (cancelled) return;
+			if (Math.abs(e.clientX - startX) <= 10) return; // 普通点击交给 click
+			const i = indexAt(e.clientX);
+			const route = i >= 0 ? tabs[i]?.dataset.route : null;
+			if (route && route !== this.state.route) {
+				this._dockSlideAt = Date.now();
+				this.go(route);
+			}
+		};
+		dock.addEventListener('pointerup', (e) => finishPress(e));
+		dock.addEventListener('pointercancel', (e) => finishPress(e, true));
 		this.state._shellReady = true;
 	},
 
