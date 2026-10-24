@@ -553,7 +553,7 @@ function showFileSyncPanel(container, onChanged) {
 			const hint = document.createElement('p');
 			hint.className = 'setting-hint';
 			hint.style.cssText = 'margin-bottom:12px;line-height:1.75';
-			hint.innerHTML = '把导入的 EPUB / TXT 原文件同步到网盘，另一台设备同步时自动下载导入（阅读进度照常同步）。<br>推荐 <b>坚果云</b>：免费、国内直连快、不需要服务器。<br>密码请用「应用密码」：网页版 → 账户信息 → 安全选项 → 添加应用密码。';
+			hint.innerHTML = '把导入的 EPUB / TXT 原文件同步到网盘，另一台设备同步时自动下载导入（阅读进度照常同步）。<br>推荐 <b>坚果云</b>：免费、国内直连快、不需要服务器。<br>首次使用请先在坚果云网页版 <b>我的文件 → 新建文件夹「zhijian」</b>（坚果云不允许在根目录直接放文件）。<br>密码用「应用密码」：网页版 → 账户信息 → 安全选项 → 添加应用密码。';
 			body.appendChild(hint);
 
 			const fields = [

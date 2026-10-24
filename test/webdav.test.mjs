@@ -75,7 +75,7 @@ const book = (await db.getBooks())[0];
 await bf.uploadLocalBookFile(book, { force: true });
 const remoteKey = [...files.keys()][0];
 check('云端收到文件', files.size === 1, JSON.stringify([...files.keys()]));
-check('文件名带 zhijian- 前缀与哈希', /^zhijian-[0-9a-f]{16}-/.test(remoteKey), remoteKey);
+check('写入 zhijian/ 目录且带哈希前缀', /^zhijian\/zhijian-[0-9a-f]{16}-/.test(remoteKey), remoteKey);
 check('内容一致', Buffer.from(files.get(remoteKey)).toString() === 'EPUB-CONTENT-1234');
 
 console.log('== JSON 快照读写 ==');

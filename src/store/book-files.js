@@ -19,6 +19,13 @@ import {
 import { parseBookFile } from '../core/importer.js';
 
 const CFG_KEY = 'zj-files-v1';
+/**
+ * 云端目录名。
+ * 坚果云不允许在 WebDAV 根目录直接创建文件（根目录 GET 返回 403、PUT 返回 404），
+ * 必须先有一个文件夹再往里写——Zotero/legado 等应用也是这么做的。
+ * 首次使用需要用户在坚果云网页版根目录新建同名文件夹。
+ */
+const DAV_FOLDER = 'zhijian';
 const DEFAULTS = { enabled: false, url: 'https://dav.jianguoyun.com/dav/', user: '', pass: '' };
 
 /** 坚果云 WebDAV 地址（预填；其它服务可自行修改） */
@@ -152,8 +159,10 @@ async function davRequest(cfg, method, path, { body = null, headers = {} } = {})
 	});
 }
 
+const davPath = (name) => `${DAV_FOLDER}/${name}`;
+
 async function davPut(cfg, name, bytes) {
-	const r = await davRequest(cfg, 'PUT', name, {
+	const r = await davRequest(cfg, 'PUT', davPath(name), {
 		body: bytes,
 		headers: { 'Content-Type': 'application/octet-stream' }
 	});
@@ -169,8 +178,10 @@ async function davPut(cfg, name, bytes) {
 export async function testFileSyncConnection() {
 	const cfg = loadFileSyncConfig();
 	if (!cfg.url || !cfg.user || !cfg.pass) throw new Error('请先填写地址、账号和密码');
+	// 先尝试自动建目录（Android 的 HttpURLConnection 不支持 MKCOL，会失败并忽略）
+	try { await davRequest(cfg, 'MKCOL', DAV_FOLDER); } catch { /* 忽略 */ }
 	const probe = `zhijian-probe-${Date.now()}.txt`;
-	const r = await davRequest(cfg, 'PUT', probe, {
+	const r = await davRequest(cfg, 'PUT', davPath(probe), {
 		body: new TextEncoder().encode('zhijian webdav probe'),
 		headers: { 'Content-Type': 'text/plain' }
 	});
@@ -184,19 +195,19 @@ export async function testFileSyncConnection() {
 			const root = await davRequest(cfg, 'GET', '', {});
 			rootStatus = root.status === 401 ? '401（账号/应用密码不正确）' : `HTTP ${root.status}`;
 		} catch { rootStatus = '网络不可达'; }
-		throw new Error(`服务器返回 404。请求地址：${cfg.url}zhijian-probe-*.txt｜根目录探测：${rootStatus}｜坚果云地址必须是 https://dav.jianguoyun.com/dav/ ，账号用邮箱、密码用「应用密码」`);
+		throw new Error(`坚果云不允许在根目录直接建文件（根目录探测：${rootStatus}）。请先在坚果云网页版 → 我的文件 → 新建文件夹「${DAV_FOLDER}」，然后再点重试（只需建一次）`);
 	}
 	if (r.status === 409) throw new Error('云端目录不存在（HTTP 409）');
 	if (r.status >= 400) throw new Error(`连接失败（HTTP ${r.status}）：${cfg.url}`);
 	// 读回校验：确认不只是"能写"，也确实能读
-	const back = await davRequest(cfg, 'GET', probe);
+	const back = await davRequest(cfg, 'GET', davPath(probe));
 	if (back.status >= 400) throw new Error(`写入成功但读回失败（HTTP ${back.status}）`);
-	await davRequest(cfg, 'DELETE', probe).catch(() => { /* 清理失败不影响结论 */ });
+	await davRequest(cfg, 'DELETE', davPath(probe)).catch(() => { /* 清理失败不影响结论 */ });
 	return true;
 }
 
 async function davGet(cfg, name) {
-	const r = await davRequest(cfg, 'GET', name);
+	const r = await davRequest(cfg, 'GET', davPath(name));
 	if (r.status === 404) throw new Error('云端没有这个文件');
 	if (r.status && r.status >= 400) throw new Error(`下载失败（HTTP ${r.status}）`);
 	return r.bytes || new Uint8Array(0);
@@ -346,7 +357,7 @@ export async function downloadAndImport(items, { onProgress } = {}) {
 export async function davReadText(name) {
 	const cfg = loadFileSyncConfig();
 	if (!isFileSyncEnabled()) throw new Error('坚果云同步未配置');
-	const r = await requestText(davUrl(cfg, name), {
+	const r = await requestText(davUrl(cfg, davPath(name)), {
 		headers: { Authorization: basicAuth(cfg.user, cfg.pass) },
 		timeout: 30000
 	});
@@ -360,7 +371,7 @@ export async function davReadText(name) {
 export async function davWriteText(name, text) {
 	const cfg = loadFileSyncConfig();
 	if (!isFileSyncEnabled()) throw new Error('坚果云同步未配置');
-	const r = await requestText(davUrl(cfg, name), {
+	const r = await requestText(davUrl(cfg, davPath(name)), {
 		method: 'PUT',
 		body: text,
 		headers: {
