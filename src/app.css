@@ -575,7 +575,7 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 	font: inherit; font-size: 13px; height: 28px; padding: 0 12px; border-radius: 999px;
 	transition: background 0.15s var(--ease), color 0.15s var(--ease);
 }
-.chip.is-on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.chip.is-on { background: var(--ink); border-color: var(--ink); color: #fff; }
 .shelf-sort { margin-left: auto; border: 0; background: transparent; color: var(--ink-3); font: inherit; font-size: 12px; padding: 6px 2px; }
 
 /* 网格：列数只改 --cols / --gap（见报告 4.1） */
@@ -636,7 +636,7 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 /* 唯一允许的角标：多书源 */
 .bc-badge {
 	position: absolute;
-	right: 6px; bottom: 6px;
+	left: 6px; top: 6px;
 	font-size: 9px; line-height: 1;
 	padding: 3px 5px;
 	border-radius: 4px;

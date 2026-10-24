@@ -8,7 +8,7 @@ import { getBooks } from '../store/db.js';
 import { loadSyncConfig, isSyncEnabled, enableSync, enableDavSync, disableSync, syncNow, getPendingLocalDownloads } from '../store/sync.js';
 import {
 	loadFileSyncConfig, saveFileSyncConfig, isFileSyncEnabled,
-	uploadAllPending, downloadAndImport, testFileSyncConnection, JIANGUOYUN_DAV
+	uploadAllPending, downloadAndImport, testFileSyncConnection, normalizeDavUrl, JIANGUOYUN_DAV
 } from '../store/book-files.js';
 import { icon, toast, showDialog, showSheet, applyInkMode } from './kit.js';
 import { escapeHtml } from './library.js';
@@ -579,6 +579,18 @@ function showFileSyncPanel(container, onChanged) {
 				inputs[f.key] = input;
 				body.appendChild(row);
 			}
+
+			const urlHint = document.createElement('p');
+			urlHint.className = 'setting-hint';
+			urlHint.style.cssText = 'margin:8px 0 0;font-size:11.5px;word-break:break-all';
+			const refreshHint = () => {
+				const finalUrl = normalizeDavUrl(inputs.url.value);
+				urlHint.textContent = `实际请求地址：${finalUrl || '—'}（缺少 /dav/ 时会自动补全）`;
+			};
+			inputs.url.addEventListener('input', refreshHint);
+			inputs.url.addEventListener('blur', refreshHint);
+			refreshHint();
+			body.appendChild(urlHint);
 
 			const status = document.createElement('p');
 			status.className = 'setting-hint';

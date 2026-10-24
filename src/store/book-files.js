@@ -30,8 +30,16 @@ export const JIANGUOYUN_DAV = 'https://dav.jianguoyun.com/dav/';
  *  - 坚果云必须带 /dav 路径（只填 dav.jianguoyun.com 会 404）
  *  - 结尾补 /
  */
+/** 去掉复制粘贴常见的不可见字符（零宽空格 / 方向符 / BOM / 全角空格 / 普通空白） */
+export function stripInvisible(raw) {
+	return String(raw ?? '')
+		.replace(/[\u200b-\u200f\u202a-\u202e\u2060\ufeff\u3000]/g, '')
+		.replace(/[\s\u00a0]+/g, '')
+		.trim();
+}
+
 export function normalizeDavUrl(raw) {
-	let u = String(raw || '').trim();
+	let u = stripInvisible(raw);
 	if (!u) return '';
 	if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
 	try {
@@ -60,6 +68,8 @@ export function loadFileSyncConfig() {
 export function saveFileSyncConfig(patch) {
 	const next = { ...loadFileSyncConfig(), ...patch };
 	if (patch.url !== undefined) next.url = normalizeDavUrl(patch.url);
+	if (patch.user !== undefined) next.user = stripInvisible(patch.user);
+	if (patch.pass !== undefined) next.pass = String(patch.pass ?? '').replace(/[\u200b-\u200f\ufeff]/g, '').trim();
 	try { localStorage.setItem(CFG_KEY, JSON.stringify(next)); } catch { /* ignore */ }
 	return next;
 }
@@ -166,9 +176,21 @@ export async function testFileSyncConnection() {
 	});
 	if (r.status === 401) throw new Error('账号或密码不正确（坚果云需使用「应用密码」，不是登录密码）');
 	if (r.status === 403) throw new Error('账号无写入权限');
-	if (r.status === 404) throw new Error(`服务器返回 404（路径不存在）：坚果云地址必须是 https://dav.jianguoyun.com/dav/ ，当前为 ${cfg.url}`);
+	if (r.status === 404) {
+		// 404 有两种可能：地址路径不对，或认证其实没通过（部分服务端不返回 401）。
+		// 再探一次根目录，把结果一起告诉用户，便于定位。
+		let rootStatus = '未知';
+		try {
+			const root = await davRequest(cfg, 'GET', '', {});
+			rootStatus = root.status === 401 ? '401（账号/应用密码不正确）' : `HTTP ${root.status}`;
+		} catch { rootStatus = '网络不可达'; }
+		throw new Error(`服务器返回 404。请求地址：${cfg.url}zhijian-probe-*.txt｜根目录探测：${rootStatus}｜坚果云地址必须是 https://dav.jianguoyun.com/dav/ ，账号用邮箱、密码用「应用密码」`);
+	}
 	if (r.status === 409) throw new Error('云端目录不存在（HTTP 409）');
 	if (r.status >= 400) throw new Error(`连接失败（HTTP ${r.status}）：${cfg.url}`);
+	// 读回校验：确认不只是"能写"，也确实能读
+	const back = await davRequest(cfg, 'GET', probe);
+	if (back.status >= 400) throw new Error(`写入成功但读回失败（HTTP ${back.status}）`);
 	await davRequest(cfg, 'DELETE', probe).catch(() => { /* 清理失败不影响结论 */ });
 	return true;
 }

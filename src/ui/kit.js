@@ -138,7 +138,7 @@ export function coverGradient(str) {
 	for (let i = 0; i < (str || '').length; i++) h = (h * 31 + str.charCodeAt(i)) % 360;
 	const h1 = h;
 	const h2 = (h + 40) % 360;
-	return `linear-gradient(145deg, hsl(${h1} 24% 34%), hsl(${h2} 30% 22%))`;
+	return `linear-gradient(145deg, hsl(${h1} 32% 46%), hsl(${h2} 36% 31%))`;
 }
 
 /** 应用纸墨护眼模式（普通 Android 上的 Kindle 式纸墨观感） */
