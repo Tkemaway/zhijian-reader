@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>纸间 · 漫画下载器</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<header class="topbar">
+	<div class="brand">
+		<span class="logo">纸</span>
+		<div>
+			<h1>漫画下载器</h1>
+			<p>本地运行 · 下载完成自动打包 CBZ</p>
+		</div>
+	</div>
+	<div class="top-actions">
+		<code id="output-root">…</code>
+		<button id="open-root" class="btn ghost">打开目录</button>
+	</div>
+</header>
+
+<main class="layout">
+	<section class="panel left">
+		<div class="tabs" role="tablist">
+			<button class="tab active" data-tab="source" role="tab">书源下载</button>
+			<button class="tab" data-tab="url" role="tab">链接下载</button>
+		</div>
+
+		<div id="tab-source" class="tab-body">
+			<label class="field">
+				<span>Legado 漫画书源（JSON 或网址）</span>
+				<textarea id="source-input" rows="4" placeholder="粘贴书源 JSON，或 https://…/7978.json"></textarea>
+			</label>
+			<button id="load-source" class="btn block">加载书源</button>
+			<div id="source-info" class="source-info hidden"></div>
+			<p class="note" style="margin-top:8px">没有书源也没关系：切到「链接下载」，直接粘贴漫画页网址。</p>
+
+			<div class="divider"></div>
+
+			<label class="field">
+				<span>搜索书名</span>
+				<div class="row">
+					<input id="keyword" placeholder="例如：海贼王" autocomplete="off" />
+					<button id="search" class="btn">搜索</button>
+				</div>
+			</label>
+			<div id="search-status" class="hint"></div>
+			<div id="results" class="results"></div>
+		</div>
+
+		<div id="tab-url" class="tab-body hidden">
+			<label class="field">
+				<span>漫画页 / 目录页链接</span>
+				<div class="row">
+					<input id="url-input" placeholder="https://…" autocomplete="off" />
+					<button id="scan" class="btn">扫描</button>
+				</div>
+			</label>
+			<div id="scan-status" class="hint"></div>
+			<div id="scan-result" class="scan-result hidden"></div>
+			<p class="note">不依赖书源规则：自动识别页面里的图片和「第 N 话」链接。遇到 Cloudflare 验证页会直接提示。</p>
+		</div>
+	</section>
+
+	<section class="panel right">
+		<div class="panel-head">
+			<h2>下载</h2>
+			<span id="queue-badge" class="chip hidden">0 个任务</span>
+		</div>
+
+		<div id="selection" class="selection empty">
+			<p>从左边选一本书，或扫描一个链接。</p>
+			<p class="note">下载完成后会在输出目录生成 <b>.cbz</b>，用纸间「本地 → 导入」打开即可。</p>
+		</div>
+
+		<div class="settings">
+			<label class="field">
+				<span>输出目录</span>
+				<input id="output-dir" autocomplete="off" />
+			</label>
+			<label class="check">
+				<input type="checkbox" id="cleanup" />
+				<span>打包后删除中间图片（只留 CBZ）</span>
+			</label>
+		</div>
+
+		<button id="start" class="btn primary block" disabled>开始下载</button>
+
+		<div class="section-head">
+			<h3>进行中</h3>
+		</div>
+		<div id="active-job" class="job-zone">
+			<p class="empty-small">暂无进行中的任务</p>
+		</div>
+
+		<div class="section-head">
+			<h3>任务记录</h3>
+			<button id="refresh-jobs" class="btn tiny ghost">刷新</button>
+		</div>
+		<div id="jobs" class="jobs">
+			<p class="empty-small">还没有下载记录</p>
+		</div>
+	</section>
+</main>
+
+<div id="toasts" class="toasts"></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -11,7 +11,7 @@
     "test:engine": "node test/engine.test.mjs",
     "test:sync": "node test/sync.test.mjs",
     "test:identity": "node test/sync-identity.test.mjs",
-    "test": "node test/sync.test.mjs && node test/sync-identity.test.mjs && node test/progress-align.test.mjs && node test/local-books.test.mjs && node test/text-clean.test.mjs && node test/webdav.test.mjs && node test/epub-build.test.mjs && node test/comic.test.mjs && node test/comic-import.test.mjs && node test/pack-comic.test.mjs",
+    "test": "node test/sync.test.mjs && node test/sync-identity.test.mjs && node test/progress-align.test.mjs && node test/local-books.test.mjs && node test/text-clean.test.mjs && node test/webdav.test.mjs && node test/epub-build.test.mjs && node test/comic.test.mjs && node test/comic-import.test.mjs && node test/pack-comic.test.mjs && node test/local-downloader.test.mjs && node test/local-downloader-e2e.test.mjs",
     "release": "node scripts/release.mjs",
     "test:progress": "node test/progress-align.test.mjs",
     "test:local": "node test/local-books.test.mjs",
@@ -20,7 +20,9 @@
     "test:epub": "node test/epub-build.test.mjs",
     "test:comic": "node test/comic.test.mjs && node test/comic-import.test.mjs && node test/pack-comic.test.mjs",
     "pack:comic": "node scripts/pack-comic.mjs",
-    "test:pack": "node test/pack-comic.test.mjs"
+    "test:pack": "node test/pack-comic.test.mjs",
+    "downloader": "node tools/comic-downloader/server.mjs",
+    "test:downloader": "node test/local-downloader.test.mjs && node test/local-downloader-e2e.test.mjs"
   },
   "devDependencies": {
     "@rollup/rollup-win32-x64-msvc": "^4.64.5",
