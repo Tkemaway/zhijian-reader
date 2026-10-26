@@ -218,9 +218,9 @@ function readOpf(files, DOMParserImpl) {
  * @param {ArrayBuffer|Uint8Array} buffer
  * @param {Function} DOMParserImpl
  */
-export function parseComicEpub(buffer, DOMParserImpl) {
+export function parseComicEpub(buffer, DOMParserImpl, preloadedFiles = null) {
 	const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-	const files = unzipSync(bytes);
+	const files = preloadedFiles || unzipSync(bytes);
 	const { title, author, manifest, spine, resolve } = readOpf(files, DOMParserImpl);
 
 	const pages = [];
@@ -317,4 +317,54 @@ export function comicStats(parsed) {
 		}
 	}
 	return { pages, bytes, chapters: parsed.chapters?.length || 0 };
+}
+
+/**
+ * 判断一本 EPUB 是不是漫画。
+ *
+ * 不能只看「有没有图片」：大量小说带插图。可靠的信号是
+ * **整页都是图、几乎没有文字**的页面数量是否占多数。
+ * 导入时先跑这个判断，命中就直接走漫画解析，避免
+ * 「封面页有一行字 → 被当文字书 → 只解析出一章封面」。
+ */
+export function isComicEpub(buffer, DOMParserImpl) {
+	return inspectEpub(buffer, DOMParserImpl).isComic;
+}
+
+/**
+ * 一次解压，同时给出「是不是漫画」和文件表。
+ * 导入流程用这个：漫画只需解压一次（300MB 的包解压两次很容易 OOM）。
+ * @returns {{ files: object|null, isComic: boolean }}
+ */
+export function inspectEpub(buffer, DOMParserImpl) {
+	try {
+		const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+		const files = unzipSync(bytes);
+		const { manifest, spine, resolve } = readOpf(files, DOMParserImpl);
+		let imagePages = 0;
+		let textPages = 0;
+
+		for (const idref of spine) {
+			const item = manifest.get(idref);
+			if (!item) continue;
+			const path = resolve(item.href);
+			if (!path || !files[path]) continue;
+			if (/^image\//i.test(item.type) || isImagePath(path)) {
+				imagePages++;
+				continue;
+			}
+			if (!/html|xml/i.test(item.type) && !/\.(x?html?|xml)$/i.test(path)) continue;
+			const html = strFromU8(files[path]);
+			const doc = new DOMParserImpl().parseFromString(html, 'text/html');
+			doc.querySelectorAll('script,style,nav').forEach((el) => el.remove());
+			const text = (doc.body?.textContent || '').replace(/\s+/g, '');
+			const imgs = doc.querySelectorAll('img,image').length;
+			if (imgs && text.length < 120) imagePages++;
+			else if (text.length >= 200) textPages++;
+		}
+
+		return { files, isComic: imagePages >= 2 && imagePages > textPages };
+	} catch {
+		return { files: null, isComic: false };
+	}
 }

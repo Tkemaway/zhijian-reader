@@ -1,5 +1,5 @@
 import { cleanMetaText } from './text-clean.js';
-import { parseComicEpub, parseCbz } from './comic-book.js';
+import { parseComicEpub, parseCbz, inspectEpub } from './comic-book.js';
 /**
  * 本地书籍导入 —— TXT / EPUB / CBZ 解析
  *
@@ -256,6 +256,12 @@ export function parseBookFile(buffer, filename, DOMParserImpl) {
 	if (/\.cbr$/i.test(name)) throw new Error('暂不支持 CBR（RAR 压缩）；请转成 CBZ 或 EPUB 再导入');
 
 	if (/\.epub$/i.test(name)) {
+		// 漫画优先：整页是图的 EPUB 用文字解析往往只得到「封面那一行字」。
+		// 复用这次解压结果，避免大文件解压两遍
+		const info = inspectEpub(buffer, DOMParserImpl);
+		if (info.isComic && info.files) {
+			try { return parseComicEpub(buffer, DOMParserImpl, info.files); } catch { /* 退回文字解析 */ }
+		}
 		try {
 			return parseEpub(buffer, DOMParserImpl);
 		} catch (textErr) {
@@ -271,6 +277,10 @@ export function parseBookFile(buffer, filename, DOMParserImpl) {
 	const view = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
 	const head = view.slice(0, 4);
 	if (head[0] === 0x50 && head[1] === 0x4b) {
+		const zipInfo = inspectEpub(buffer, DOMParserImpl);
+		if (zipInfo.isComic && zipInfo.files) {
+			try { return parseComicEpub(buffer, DOMParserImpl, zipInfo.files); } catch { /* 退回文字解析 */ }
+		}
 		try {
 			return parseEpub(buffer, DOMParserImpl);
 		} catch (textErr) {

@@ -15,11 +15,11 @@ export function renderSearch(container, app) {
 	container.innerHTML = `
 		<div class="page-title">书海</div>
 		<div class="page-subtitle" id="src-count"></div>
-		${sources.some((s) => s.kind === 'comic' && s.enabled !== false) ? `
-		<div class="shelf-chips" id="kind-chips" style="margin:0 0 12px">
+		<div class="shelf-chips" id="kind-chips" style="margin:0 0 10px">
 			<button class="chip" data-kind="text">小说</button>
 			<button class="chip" data-kind="comic">漫画</button>
-		</div>` : ''}
+		</div>
+		<div class="setting-hint" id="kind-hint" style="margin:0 2px 12px;line-height:1.7"></div>
 		<div class="search-bar">
 			${icon('search', 18)}
 			<input id="q" type="search" placeholder="搜书名或作者" enterkeyhint="search" autocomplete="off" />
@@ -40,9 +40,14 @@ export function renderSearch(container, app) {
 	const textCount = enabledCount('text');
 	let activeKind = comicCount && !textCount ? 'comic' : 'text';
 	const srcCount = container.querySelector('#src-count');
+	const kindHint = container.querySelector('#kind-hint');
 	const refreshSubtitle = () => {
 		const n = enabledCount(activeKind);
 		srcCount.textContent = `${n} 个${activeKind === 'comic' ? '漫画' : '小说'}源为你待命`;
+		// 没有漫画源时别让「漫画」变成死路：直接告诉用户去哪里加
+		kindHint.textContent = activeKind === 'comic' && !n
+			? '还没有漫画源。内置源都是小说站，请到「我的 → 书源 → 添加」粘贴 Legado 漫画书源（bookSourceType: 2）'
+			: '';
 	};
 	const kindChips = container.querySelector('#kind-chips');
 	if (kindChips) {
@@ -89,6 +94,11 @@ export function renderSearch(container, app) {
 		hint.innerHTML = '';
 
 		const enabled = sources.filter((s) => s.enabled !== false && (activeKind === 'comic' ? s.kind === 'comic' : s.kind !== 'comic'));
+		if (!enabled.length) {
+			hint.textContent = activeKind === 'comic' ? '还没有漫画源，先到「我的 → 书源」添加' : '没有启用的书源';
+			searching = false;
+			return;
+		}
 		const allResults = [];
 		const statusMap = new Map();
 		const rowMap = new Map(); // 结果对象 → DOM 行

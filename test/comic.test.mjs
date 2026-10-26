@@ -15,6 +15,7 @@ const id = (p) => pathToFileURL(path.join(__dirname, '..', 'src', p)).href;
 const comic = await import(id('core/comic-book.js'));
 const { parseBookFile } = await import(id('core/importer.js'));
 const { collectComicImages } = await import(id('core/engine.js'));
+const { buildEpubFromChapters } = await import(id('core/epub-build.js'));
 
 let pass = 0, fail = 0;
 const check = (name, cond, extra = '') => {
@@ -131,6 +132,20 @@ const parsedCbz = comic.parseCbz(cbz, '海贼王 第1卷.cbz');
 check('CBZ 识别为漫画', parsedCbz.kind === 'comic');
 check('书名取文件名', parsedCbz.title === '海贼王 第1卷', parsedCbz.title);
 check('过滤 macOS 垃圾文件', parsedCbz.chapters[0].images.length === 4, String(parsedCbz.chapters[0].images.length));
+
+console.log('== 文字书不会被误判成漫画 ==');
+const textEpub = buildEpubFromChapters({
+	title: '普通小说', author: '作者', id: 't1',
+	chapters: [
+		{ title: '第一章', paragraphs: ['这是一段正常的小说正文。'.repeat(30)] },
+		{ title: '第二章', paragraphs: ['第二章也有很多字。'.repeat(30)] }
+	]
+});
+check('图片 EPUB 判为漫画', comic.isComicEpub(epub, DOMParser) === true);
+check('文字 EPUB 不判为漫画', comic.isComicEpub(textEpub, DOMParser) === false);
+const parsedText = parseBookFile(textEpub, '小说.epub', DOMParser);
+check('分派后仍是文字书', parsedText.kind === 'text', parsedText.kind);
+check('正文完整', parsedText.chapters[0].paragraphs.length > 0);
 
 console.log('== parseBookFile 自动分派 ==');
 const autoComic = parseBookFile(epub, 'comic.epub', DOMParser);
