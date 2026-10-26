@@ -636,6 +636,8 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+	/* 给左下角的「漫画」角标留位，长作者名不会压上去 */
+	padding-left: 38px;
 }
 /* 唯一允许的角标：多书源 */
 .bc-badge {
