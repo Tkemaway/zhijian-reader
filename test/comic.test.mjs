@@ -14,8 +14,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const id = (p) => pathToFileURL(path.join(__dirname, '..', 'src', p)).href;
 const comic = await import(id('core/comic-book.js'));
 const { parseBookFile } = await import(id('core/importer.js'));
-const { collectComicImages } = await import(id('core/engine.js'));
+const { collectComicImages, detectBlockPage } = await import(id('core/engine.js'));
 const { buildEpubFromChapters } = await import(id('core/epub-build.js'));
+const { parseSearchUrl } = await import(id('core/legado.js'));
+const { parseToc } = await import(id('core/source-legado.js'));
 
 let pass = 0, fail = 0;
 const check = (name, cond, extra = '') => {
@@ -193,6 +195,41 @@ check('缺 toc/content 的源被拒', cs.normalizeCustomSource({ bookSourceName:
 const parsedInput = cs.parseSourceInput(JSON.stringify([rawSource]));
 check('支持数组格式', parsedInput.list.length === 1 && !parsedInput.error, parsedInput.error);
 check('非法 JSON 给提示', !!cs.parseSourceInput('{bad json').error);
+
+console.log('== 站点书源的常见写法兼容 ==');
+// yckceo 的源常把提示写在 <js> 里，真地址在后面
+const su = parseSearchUrl('<js>java.toast("请先通过验证");</js>/page/{{page}}/?s={{key}}&post_type=wp-manga', '海贼王', { baseUrl: 'https://baka3.cfd' });
+check('<js> 前缀被剥离', su?.url === 'https://baka3.cfd/page/1/?s=%E6%B5%B7%E8%B4%BC%E7%8E%8B&post_type=wp-manga', su?.url);
+
+// 目录规则是 @js:java.getElements('selector') 且倒序
+const jsSource = {
+	url: 'https://example.com',
+	ruleToc: {
+		chapterList: "@js:var items=java.getElements('#list li.ch');var arr=[];for(var i=items.size()-1;i>=0;i--){arr.push(items.get(i));}arr",
+		chapterName: 'a@text',
+		chapterUrl: 'a@href'
+	}
+};
+const tocHtml = '<html><body><ul id="list"><li class="ch"><a href="/c1">第1话</a></li><li class="ch"><a href="/c2">第2话</a></li></ul></body></html>';
+const tocRows = parseToc(tocHtml, 'https://example.com/m/1/', jsSource, DOMParser);
+check('脚本目录按选择器取到', tocRows.length === 2, JSON.stringify(tocRows));
+check('倒序规则生效', tocRows[0]?.title === '第2话', JSON.stringify(tocRows));
+
+// 失败提示要指出具体缺哪个字段
+const badInput = cs.parseSourceInput('[{"bookSourceName":"只有名字"}]');
+check('缺字段提示具体', /bookSourceUrl/.test(badInput.error), badInput.error);
+const realSource = cs.parseSourceInput(JSON.stringify([{
+	bookSourceName: '脚本漫画源',
+	bookSourceUrl: 'https://example.com',
+	bookSourceType: 2,
+	searchUrl: '<js>java.toast("x")</js>/s?q={{key}}',
+	ruleSearch: { bookList: '.item' },
+	ruleToc: { chapterList: '@js:java.getElements(".ch")' },
+	ruleContent: { content: '.reader' }
+}]));
+check('标记含脚本规则的源', realSource.list[0]?.scripted === true);
+check('识别 Cloudflare 拦截页', /人机验证/.test(detectBlockPage('<html><title>Just a moment...</title></html>')));
+check('普通页面不误判', detectBlockPage('<html><title>漫画首页</title></html>') === '');
 
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`);
 process.exit(fail ? 1 : 0);

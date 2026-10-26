@@ -40,6 +40,17 @@ export function normalizeCustomSource(raw) {
 	if (!ruleToc.chapterList) return null;
 	if (!ruleContent.content) return null;
 
+	// 依赖脚本 / 登录验证的源：能加，但不保证能跑
+	const scriptText = [
+		raw.searchUrl || '',
+		raw.loginUrl || '',
+		raw.loginCheckJs || '',
+		JSON.stringify(ruleSearch),
+		JSON.stringify(ruleToc),
+		JSON.stringify(ruleContent)
+	].join('\n');
+	const scripted = /@js:|<js>|java\.|startBrowserAwait|loginCheckJs/i.test(scriptText);
+
 	const kind = guessKind(raw, name, url);
 	return {
 		id: `cs-${hash(url)}`,
@@ -56,7 +67,8 @@ export function normalizeCustomSource(raw) {
 		ruleContent,
 		header: raw.header || '',
 		comicInclude: raw.comicInclude || '',
-		comicExclude: raw.comicExclude || ''
+		comicExclude: raw.comicExclude || '',
+		scripted
 	};
 }
 
@@ -83,6 +95,23 @@ export function saveCustomSources(list) {
  * 解析用户粘贴的 JSON（支持单条 / 数组 / {sources:[...]}）
  * @returns {{list: Array, error: string}}
  */
+/** 这条书源缺什么（用于「添加失败」的具体提示） */
+export function describeMissingSource(raw) {
+	if (!raw || typeof raw !== 'object') return '不是有效的书源对象';
+	const url = String(raw.bookSourceUrl || raw.url || '').trim();
+	const name = String(raw.bookSourceName || raw.name || '').trim();
+	const ruleSearch = raw.ruleSearch || {};
+	const ruleToc = raw.ruleToc || {};
+	const ruleContent = raw.ruleContent || {};
+	if (!url) return '缺少 bookSourceUrl';
+	if (!/^https?:\/\//i.test(url)) return 'bookSourceUrl 不是 http(s) 地址';
+	if (!name) return '缺少 bookSourceName';
+	if (!raw.searchUrl && !ruleSearch.bookList) return '缺少 searchUrl（或 ruleSearch.bookList）';
+	if (!ruleToc.chapterList) return '缺少 ruleToc.chapterList（目录规则）';
+	if (!ruleContent.content) return '缺少 ruleContent.content（正文规则）';
+	return '';
+}
+
 export function parseSourceInput(text) {
 	const trimmed = String(text || '').trim();
 	if (!trimmed) return { list: [], error: '请粘贴书源 JSON' };
@@ -99,7 +128,12 @@ export function parseSourceInput(text) {
 			: [data];
 	const list = arr.map(normalizeCustomSource).filter(Boolean);
 	if (!list.length) {
-		return { list: [], error: '没有可用的书源：需要 bookSourceUrl / bookSourceName / searchUrl / ruleToc / ruleContent' };
+		// 指出第一条到底缺什么，别让用户对着「格式不对」猜
+		const reasons = arr.map((raw, i) => {
+			const why = describeMissingSource(raw);
+			return why ? `第 ${i + 1} 条：${why}` : '';
+		}).filter(Boolean);
+		return { list: [], error: `没有可用的书源${reasons.length ? `（${reasons[0]}）` : '：需要 bookSourceUrl / bookSourceName / searchUrl / ruleToc / ruleContent'}` };
 	}
 	return { list, error: '' };
 }
@@ -110,16 +144,16 @@ export function addCustomSources(text) {
 	if (error) throw new Error(error);
 	const current = loadCustomSources();
 	const byUrl = new Map(current.map((s) => [s.url, s]));
-	let added = 0;
+	const addedList = [];
 	let skipped = 0;
 	for (const s of list) {
 		if (byUrl.has(s.url)) { skipped++; continue; }
 		byUrl.set(s.url, s);
-		added++;
+		addedList.push(s);
 	}
 	const next = [...byUrl.values()];
 	saveCustomSources(next);
-	return { added, skipped, list: next };
+	return { added: addedList.length, skipped, list: next, addedList };
 }
 
 export function removeCustomSource(id) {

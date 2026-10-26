@@ -16,6 +16,7 @@ import {
 import { toast, showDialog, showSheet, applyInkMode } from './kit.js';
 import { escapeHtml } from './library.js';
 import { fqAppSearch, fqAppToc, fqAppChapter } from '../core/fanqie-app.js';
+import { requestText } from '../core/http.js';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '开发版';
 
@@ -428,7 +429,7 @@ export async function renderProfile(container, app) {
 		const kindTag = s.kind === 'comic' ? '<span class="src-tag">漫画</span>' : '';
 		const hint = isFanqieApp
 			? 'APP 协议源 · 全本直连（实验性）'
-			: `${s.type === 'legado' ? '阅读系规则' : 'SoNovel 规则'} · ${escapeHtml(s.url)}`;
+			: `${s.type === 'legado' ? '阅读系规则' : 'SoNovel 规则'}${s.scripted ? ' · 含脚本/登录验证' : ''} · ${escapeHtml(s.url)}`;
 		row.innerHTML = `
 			<div style="min-width:0">
 				<div class="setting-label">${escapeHtml(s.name)} ${kindTag}${s.custom ? '<span class="src-tag src-tag-custom">自定义</span>' : ''}</div>
@@ -479,7 +480,7 @@ function showAddSourcePanel(app) {
 			const hint = document.createElement('p');
 			hint.className = 'setting-hint';
 			hint.style.cssText = 'line-height:1.75;margin-bottom:12px';
-			hint.innerHTML = '粘贴 <b>Legado（阅读 3.0）书源</b> 的 JSON（单条或数组）。<br>漫画源会带 <code>bookSourceType: 2</code>，添加后自动归到「漫画」分类。';
+			hint.innerHTML = '粘贴 <b>Legado（阅读 3.0）书源</b> 的 JSON（单条或数组），或直接粘贴 <b>JSON 文件网址</b>（http 开头）。<br>漫画源会带 <code>bookSourceType: 2</code>，添加后自动归到「漫画」分类。';
 			body.appendChild(hint);
 
 			const ta = document.createElement('textarea');
@@ -496,15 +497,44 @@ function showAddSourcePanel(app) {
 			btn.className = 'btn btn-primary btn-block';
 			btn.style.marginTop = '12px';
 			btn.textContent = '添加';
-			btn.onclick = () => {
+			btn.onclick = async () => {
+				const input = ta.value.trim();
+				if (!input) { status.textContent = '请粘贴书源 JSON 或 JSON 链接'; return; }
+				btn.disabled = true;
+				btn.textContent = '读取中…';
+				status.textContent = '';
 				try {
-					const r = addCustomSources(ta.value);
+					let text = input;
+					// 直接贴网址：先把 JSON 下载回来（yckceo 等站点的书源都是这种链接）
+					if (/^https?:\/\//i.test(input)) {
+						status.textContent = '正在下载书源…';
+						const res = await requestText(input, { timeout: 30000 });
+						if (res.status >= 400) throw new Error(`链接返回 HTTP ${res.status}（可能需要登录或已失效）`);
+						if (!String(res.text || '').trim()) throw new Error('链接内容为空');
+						text = res.text;
+						status.textContent = `已下载 ${(text.length / 1024).toFixed(1)} KB，正在添加…`;
+					}
+					const r = addCustomSources(text);
 					refreshSources();
-					toast(r.added ? `已添加 ${r.added} 个书源${r.skipped ? `（${r.skipped} 个已存在）` : ''}` : '这些书源都已经添加过了');
+					if (!r.added) {
+						status.textContent = '这些书源都已经添加过了';
+						btn.disabled = false;
+						btn.textContent = '添加';
+						return;
+					}
+					const scripted = (r.addedList || []).filter((s) => s.scripted).length;
+					toast(`已添加 ${r.added} 个书源${r.skipped ? `（${r.skipped} 个已存在）` : ''}`, 2400);
 					close();
 					app.refresh();
+					if (scripted) {
+						// 不阻断添加，但必须说清楚：这类源要跑脚本/过验证
+						setTimeout(() => toast('其中含脚本或登录验证的源，搜索/目录可能不完整', 3600), 600);
+					}
 				} catch (e) {
 					status.textContent = `添加失败：${e.message || e}`;
+				} finally {
+					btn.disabled = false;
+					btn.textContent = '添加';
 				}
 			};
 			body.appendChild(btn);

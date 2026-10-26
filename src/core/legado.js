@@ -448,13 +448,16 @@ function createJavaBridge(ctx) {
 export function parseSearchUrl(searchUrl, key, opts = {}) {
 	if (!searchUrl) return null;
 	const { baseUrl = '', page = 1 } = opts;
-	let urlPart = searchUrl;
+	// 不少书源把提示/计算写在 <js> 里（如 java.toast），真正的地址在后面
+	let rawSearch = String(searchUrl).replace(/<js>[\s\S]*?<\/js>/gi, '').trim();
+	if (!rawSearch) return null;
+	let urlPart = rawSearch;
 	let conf = {};
 
-	const commaIdx = searchUrl.indexOf(',');
-	if (commaIdx !== -1 && searchUrl.trimStart().indexOf(',{') !== -1) {
-		urlPart = searchUrl.slice(0, commaIdx);
-		const confStr = searchUrl.slice(commaIdx + 1);
+	const commaIdx = rawSearch.indexOf(',');
+	if (commaIdx !== -1 && rawSearch.trimStart().indexOf(',{') !== -1) {
+		urlPart = rawSearch.slice(0, commaIdx);
+		const confStr = rawSearch.slice(commaIdx + 1);
 		conf = parseLooseJson(confStr);
 	}
 

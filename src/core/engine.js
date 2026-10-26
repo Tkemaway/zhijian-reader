@@ -14,15 +14,38 @@ export function getAdapter(source) {
 	return source?.type === 'legado' ? legado : sonovel;
 }
 
+/**
+ * 识别「人机验证 / Cloudflare 拦截页」。
+ * 这类页面 HTTP 200，正文却是验证页——不识别的话会表现为
+ * 「搜索 0 条、没有任何报错」，很难排查。
+ */
+export function detectBlockPage(html) {
+	const head = String(html || '').slice(0, 8000);
+	if (/<title>\s*Just a moment|cf-browser-verification|cf-chl-|Checking your browser|Performing security verification|Verifying you are human|Attention Required! \| Cloudflare/i.test(head)) {
+		return '站点要求人机验证（Cloudflare）。需要先在浏览器里通过验证并带上 Cookie，App 内暂时无法直接访问';
+	}
+	if (/<title>\s*访问验证|滑动验证|安全验证/.test(head)) {
+		return '站点要求验证码/人机验证，App 内暂时无法直接访问';
+	}
+	return '';
+}
+
 /** 带重试的请求（默认重试 2 次） */
 export async function robustRequest(url, opts = {}, retries = 2) {
 	let lastErr;
 	for (let i = 0; i <= retries; i++) {
 		opts.signal?.throwIfAborted();
 		try {
-			return await requestText(url, opts);
+			const resp = await requestText(url, opts);
+			const block = detectBlockPage(resp.text);
+			if (block) {
+				const err = new Error(block);
+				err.noRetry = true; // 重试也没用，别浪费时间
+				throw err;
+			}
+			return resp;
 		} catch (e) {
-			if (opts.signal?.aborted || e.name === 'AbortError') throw e;
+			if (e.noRetry || opts.signal?.aborted || e.name === 'AbortError') throw e;
 			lastErr = e;
 			if (i < retries) await sleep(800 * (i + 1));
 		}

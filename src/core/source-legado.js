@@ -107,6 +107,20 @@ export function parseSearchResults(html, baseUrl, source, DOMParserImpl, keyword
 
 /** 解析 bookList 得到行元素数组（bookList 可能是 CSS/XPath/多规则） */
 function collectRows(doc, bookListRule, ctx) {
+	// 兼容一种很常见的脚本目录规则：
+	//   @js:var items=java.getElements('#list li');for(i=size-1;i>=0;i--){arr.push(items.get(i))}arr
+	// 本质就是「按选择器取元素 + 倒序」，不需要真的执行 JS
+	const jsRule = String(bookListRule || '');
+	if (jsRule.startsWith('@js:')) {
+		const m = jsRule.match(/java\.getElements\(\s*['"]([^'"]+)['"]\s*\)/);
+		if (m) {
+			let els;
+			try { els = [...doc.querySelectorAll(m[1])]; } catch { els = []; }
+			if (/\.size\(\)\s*-\s*1/.test(jsRule) || /i--/.test(jsRule)) els.reverse();
+			return els;
+		}
+		return [];
+	}
 	// 简单规则直接用 extractLegado 的元素返回能力
 	const { parseRuleString, navigate } = getLegadoInternals();
 	const parsed = parseRuleString(bookListRule);
