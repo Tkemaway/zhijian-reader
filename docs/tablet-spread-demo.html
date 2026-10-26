@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>纸间 · 平板双栏 Demo</title>
+<style>
+	:root {
+		--page: #e7e4de;
+		--paper: #fbf7ef;
+		--ink: #2e2b27;
+		--ink-2: #8a8279;
+		--line: rgba(46, 43, 39, 0.12);
+		--accent: #8a6f4d;
+		--serif: 'Songti SC', 'Source Han Serif SC', 'Noto Serif CJK SC', 'SimSun', serif;
+		--ui: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+	}
+	* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+	html, body { height: 100%; }
+	body {
+		background: var(--page);
+		font-family: var(--ui);
+		color: #1c1c1e;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+	}
+
+	/* ---------- 顶部工具条 ---------- */
+	.bar {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+		gap: 14px;
+		padding: 12px 18px;
+		background: rgba(255, 255, 255, 0.72);
+		border-bottom: 0.5px solid rgba(0, 0, 0, 0.08);
+		flex-wrap: wrap;
+	}
+	.brand { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+	.brand span { color: #8a8279; font-weight: 500; margin-left: 6px; }
+	.controls { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+	.seg { display: flex; background: rgba(0, 0, 0, 0.06); border-radius: 9px; padding: 3px; }
+	.seg button {
+		border: 0; background: transparent; font: inherit; font-size: 12.5px; font-weight: 600;
+		color: #6e6e73; padding: 6px 12px; border-radius: 7px; cursor: pointer;
+		transition: background 0.18s ease, color 0.18s ease;
+	}
+	.seg button.on { background: #fff; color: #1c1c1e; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+	.chk { font-size: 12.5px; color: #6e6e73; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+	/* ---------- 舞台 ---------- */
+	.stage { position: relative; flex: 1 1 auto; overflow: hidden; }
+	.device {
+		position: absolute; left: 50%; top: 50%;
+		width: 1024px; height: 768px;
+		transform-origin: center center;
+		background: var(--paper);
+		border-radius: 18px;
+		box-shadow: 0 30px 90px rgba(28, 28, 30, 0.26), 0 0 0 1px rgba(0, 0, 0, 0.06);
+		overflow: hidden;
+	}
+	.screen { position: absolute; inset: 0; background: var(--paper); color: var(--ink); }
+
+	/* ---------- 阅读器顶/底栏（与 App 一致的极简样式） ---------- */
+	.rd-top, .rd-bottom {
+		position: absolute; left: 0; right: 0; z-index: 5;
+		display: flex; align-items: center;
+		background: rgba(251, 247, 239, 0.92);
+		backdrop-filter: blur(16px);
+	}
+	.rd-top { top: 0; height: 56px; padding: 0 14px; gap: 10px; border-bottom: 0.5px solid var(--line); }
+	.rd-bottom { bottom: 0; height: 72px; padding: 10px 20px 14px; flex-direction: column; gap: 8px; border-top: 0.5px solid var(--line); }
+	.rd-title { flex: 1; text-align: center; font-size: 14.5px; font-weight: 600; opacity: 0.9; }
+	.ico { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: var(--ink); opacity: 0.75; font-size: 18px; }
+	.progress { width: 100%; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+	.progress i { display: block; height: 100%; width: 0; background: var(--ink); opacity: 0.7; transition: width 0.3s ease; }
+	.meta { width: 100%; display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+	/* ---------- 正文 ---------- */
+	.viewport { position: absolute; inset: 0; overflow: hidden; }
+	.content {
+		box-sizing: border-box;
+		width: 100%;
+		column-fill: auto;
+		font-family: var(--serif);
+		font-size: 18px;
+		line-height: 1.9;
+		letter-spacing: 0.02em;
+		text-align: justify;
+		color: var(--ink);
+		transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+		will-change: transform;
+	}
+	.content p { margin: 0 0 0.9em; text-indent: 2em; }
+	.ch-title {
+		font-size: 24px; line-height: 1.5; font-weight: 700;
+		margin: 0 0 1.3em; letter-spacing: 0.01em;
+		break-after: avoid;
+	}
+
+	/* 中缝：只在双栏时出现，像书脊的阴影 */
+	.spine {
+		position: absolute; top: 72px; bottom: 86px; left: 50%;
+		width: 1px; background: rgba(46, 43, 39, 0.1);
+		box-shadow: 6px 0 14px rgba(46, 43, 39, 0.05), -6px 0 14px rgba(46, 43, 39, 0.05);
+		opacity: 0; transition: opacity 0.2s ease; pointer-events: none;
+	}
+	body.spread .spine { opacity: 1; }
+
+	/* ---------- 尺寸标注 ---------- */
+	.anno { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; }
+	body.anno-on .anno { opacity: 1; }
+	.tag {
+		position: absolute; font-family: var(--ui); font-size: 11px; font-weight: 600;
+		color: #a8560f; background: rgba(255, 244, 230, 0.94);
+		border: 1px solid rgba(168, 86, 15, 0.28); border-radius: 5px; padding: 3px 7px;
+		white-space: nowrap;
+	}
+	.tag-col { left: 6%; top: 66px; }
+	.tag-gutter { left: 50%; top: 66px; transform: translateX(-50%); }
+	.tag-foot { left: 50%; bottom: 84px; transform: translateX(-50%); }
+	.tag-margin { left: 12px; top: 50%; transform: translateY(-50%) rotate(-90deg); transform-origin: left center; }
+
+	/* ---------- 底部提示 ---------- */
+	.tips {
+		flex: 0 0 auto; display: flex; align-items: center; gap: 14px; justify-content: center;
+		padding: 9px 16px calc(9px + env(safe-area-inset-bottom));
+		font-size: 12px; color: #6e6e73; background: rgba(255, 255, 255, 0.6);
+		border-top: 0.5px solid rgba(0, 0, 0, 0.06);
+	}
+	.tips b { color: #1c1c1e; font-weight: 600; }
+	.navbtn {
+		border: 0; background: rgba(0, 0, 0, 0.06); color: #1c1c1e; font: inherit; font-size: 12px;
+		padding: 6px 12px; border-radius: 7px; cursor: pointer;
+	}
+	.navbtn:active { transform: scale(0.97); }
+
+	/* 点击区提示 */
+	.zone { position: absolute; top: 56px; bottom: 72px; width: 18%; z-index: 4; cursor: pointer; }
+	.zone.l { left: 0; }
+	.zone.r { right: 0; }
+	.zone:hover { background: rgba(138, 111, 77, 0.04); }
+
+	/* ---------- 墨水屏黑白 ---------- */
+	body.ink { --page: #d9d9d9; --paper: #fff; --ink: #000; --ink-2: #444; --line: rgba(0, 0, 0, 0.22); }
+	body.ink .rd-top, body.ink .rd-bottom { background: #fff; backdrop-filter: none; }
+	body.ink .device { box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22); }
+	body.ink .spine { box-shadow: none; background: rgba(0, 0, 0, 0.28); }
+	body.ink .tag { color: #000; background: #fff; border-color: #000; }
+
+	@media (max-width: 720px) {
+		.brand span { display: none; }
+		.controls { margin-left: 0; }
+	}
+</style>
+</head>
+<body class="spread">
+
+<header class="bar">
+	<div class="brand">纸间 · 平板排版 Demo<span>1024 × 768 · 双栏仅在 ≥900px 且横屏时启用</span></div>
+	<div class="controls">
+		<div class="seg" id="modeSeg">
+			<button data-mode="single">当前：单栏</button>
+			<button data-mode="spread" class="on">提案：双栏跨页</button>
+		</div>
+		<div class="seg" id="themeSeg">
+			<button data-theme="paper" class="on">纸白</button>
+			<button data-theme="ink">墨水黑白</button>
+		</div>
+		<label class="chk"><input type="checkbox" id="anno" /> 尺寸标注</label>
+	</div>
+</header>
+
+<main class="stage" id="stage">
+	<div class="device" id="device">
+		<div class="screen" id="screen">
+			<div class="viewport" id="viewport">
+				<article class="content" id="content"></article>
+				<div class="spine" id="spine"></div>
+				<div class="anno">
+					<span class="tag tag-col" id="tagCol">栏宽</span>
+					<span class="tag tag-gutter" id="tagGutter">中缝</span>
+					<span class="tag tag-foot" id="tagFoot">页脚</span>
+					<span class="tag tag-margin" id="tagMargin">页边距</span>
+				</div>
+			</div>
+			<div class="zone l" id="zoneL"></div>
+			<div class="zone r" id="zoneR"></div>
+			<header class="rd-top">
+				<span class="ico">‹</span>
+				<span class="rd-title">第一章 · 纸上的光</span>
+				<span class="ico">⋯</span>
+			</header>
+			<footer class="rd-bottom">
+				<div class="progress"><i id="progressFill"></i></div>
+				<div class="meta"><span id="pct">0%</span><span id="pageLabel">1 / 1 页</span></div>
+			</footer>
+		</div>
+	</div>
+</main>
+
+<footer class="tips">
+	<span>点击左右两侧翻页，或按 <b>←</b> <b>→</b></span>
+	<button class="navbtn" id="prev">上一页</button>
+	<button class="navbtn" id="next">下一页</button>
+	<button class="navbtn" id="reset">回到第 1 页</button>
+</footer>
+
+<script>
+const PARAS = [
+	'纸是有记忆的。折过的地方会留下浅浅的痕，翻久了，书脊会松，某一页会自己摊开，像一个人先你一步记住了要停下的位置。',
+	'小时候读书，总觉得字是从纸里长出来的。后来才明白，是光落在纸上，把墨与空白之间的那点分寸照了出来。',
+	'一页纸能装下的东西其实很少。可正是这点少，让人愿意慢下来：眼睛一行一行地走，手指在纸边停一停，等一句话在心里落定。',
+	'排版从来不只是把字放进格子里。字与字的距离、行与行的呼吸、页边留出的白，决定了你是被文字推着往前跑，还是可以坐下来陪它一会儿。',
+	'屏幕上的阅读常常是滑动的。滑动没有尽头，也没有边界，读到哪里全凭手指的心情。纸不一样，纸有正反面，有左页和右页，有一次只能看两页的克制。',
+	'双栏排版最早是为宽纸准备的。一张对开的纸，从中间折起来，左边读完了看右边，眼睛移动的距离短，脖子也不用转。',
+	'平板横过来的时候，其实很像一张摊开的纸。只是大多数阅读软件仍把它当成一部放大的手机，把一行字拉得很长，读到行尾再回到行首，眼睛要多走一趟。',
+	'把一页分成两栏，不是为了塞进更多字，而是为了让每一行都短一点。行短了，眼睛回扫的路径就短，读久了不容易累。',
+	'中缝要留得够宽。太窄，两栏会挤在一起，像两个人贴着耳朵说话；太宽，视线跨过去要停顿，读起来就断了。',
+	'页边距是给手指留的，也是给眼睛留的。文字顶到边缘，看起来会紧张；留一点白，页面才会松下来。',
+	'页码放在页脚外侧，读的时候几乎看不见，想找的时候一定找得到。好的排版总是这样，不抢话，但从不缺席。',
+	'章节标题不该和正文挤在一起。它需要上方多一点空白，像一段话说完之后的停顿，让人知道这里要换一口气。',
+	'有人喜欢把字排得很密，觉得这样才不浪费纸。可阅读不是搬运，读进去的才算数。',
+	'墨水屏的刷新慢，翻页时会有一瞬间的空白。这一瞬间反而像翻纸：旧的页过去了，新的页还没有完全落定。',
+	'在墨水屏上，纯黑与纯白之间的距离最大。灰阶被压到十六级，层次少了，字反而更清楚。',
+	'暖色的纸在白天的窗光下很好看，到了夜里却容易发黄。真正读书的人，最后往往还是回到最朴素的黑白。',
+	'黑白不是没有温度。墨落在纸上，边缘会有一点毛，那点毛就是温度。',
+	'读长篇小说时，最怕的不是字多，而是每一页都长得一样。分栏之后，左页和右页有了区别，翻页这件事重新有了节奏。',
+	'节奏是阅读里最容易被忽略的东西。一段长句之后需要一个短句，一个紧张的段落之后需要一行空白。',
+	'排版做到最后，是让人忘记排版。你只记得故事，不记得字号是十八还是十九。',
+	'可要做到让人忘记，前面就得有人一遍遍地量：一栏多宽，一行几个字，一页放多少行，页脚离底边多远。',
+	'这些数字没有一个是绝对的。屏幕大了要变，字号变了要变，字体换了还要变。',
+	'唯一不变的是目的：让眼睛少走一点冤枉路，让注意力多留在句子上。',
+	'所以双栏不是一种风格，而是一种选择：在足够宽的屏幕上，承认一行字不该无限延长。',
+	'当然，窄屏仍然适合单栏。手机竖着拿的时候，一栏刚好，分成两栏反而局促。',
+	'这也是为什么它应该自动发生：横过来、屏幕够宽，就摊开成两页；竖回去，就收回一页。',
+	'读书的人不需要设置这些。他只需要把设备转过来，然后继续读下去。',
+	'窗外的光慢慢偏了，纸的颜色也跟着变。字还是那些字，只是看起来比刚才柔和了一点。',
+	'合上书的时候，你会记得今天读到了哪里。不是页码，是那一页的样子：左边一段对话，右边一段独白，中间隔着一条很浅的缝。',
+	'有人说纸质书会消失。可只要还有人愿意在页边写下一行小字，纸就不会消失，它只是换了一种被翻开的方式。',
+	'电子纸最像纸的地方，不是颜色，而是它不发光。光从外面来，落在屏幕上，再反射进眼睛里，眼睛会放松一些。',
+	'不发光意味着它也需要窗、需要灯、需要一个愿意坐下来的人。这三样东西，阅读器一样都给不了。',
+	'所以工具能做到的其实很有限：把字排好，把光让开，把翻页做得轻一点，然后退到后面去。',
+	'排版里有一个词叫"字距"。字与字之间多一点，读起来会慢；少一点，会急。中文尤其敏感，差半个像素都能感觉出来。',
+	'行距也一样。行太密，眼睛会串行；行太松，一段话会被拆成好几截，气就散了。',
+	'这些参数没有标准答案，只有"这一本"的答案。小说可以松一点，工具书要紧一点，诗则完全另说。',
+	'所以真正好的阅读器，会把调整的权力交出去：字号、行距、段距、字体，让每个人找到自己那双眼睛的舒服。',
+	'但交出去不等于不管。默认值仍然重要，因为大多数人不会去调。默认值就是作者替读者做的那次排版。',
+	'双栏的默认值尤其难：栏太宽，一行字多，回扫费劲；栏太窄，一行没几个字，读起来像在数豆子。',
+	'经验上，中文一行二十到三十个字最舒服。按十八号字算，一栏大约四百像素，正好是十寸平板的一半。',
+	'这也解释了为什么双栏在平板上成立，在手机上不成立：不是审美问题，是算术问题。',
+	'算术之外还有手感。翻页的那一下，应该轻，应该快，应该让人知道"我往前走了"，而不是"我被弹到了别处"。',
+	'淡化翻页之所以耐看，是因为它模拟的是眼睛的适应过程：旧的画面淡下去，新的画面浮上来，中间没有黑屏。',
+	'墨水屏把这个过程放慢了。慢有慢的好处，它给了你半秒钟，让你从上一句里出来。',
+	'有人说这是缺点。可读书本来就不是一件需要追求帧率的事。',
+	'窗外的光又偏了一点。纸还是那张纸，字还是那些字，只是页脚的数字悄悄跳了一格。'
+];
+
+const stage = document.getElementById('stage');
+const device = document.getElementById('device');
+const viewport = document.getElementById('viewport');
+const content = document.getElementById('content');
+const progressFill = document.getElementById('progressFill');
+const pctEl = document.getElementById('pct');
+const pageLabel = document.getElementById('pageLabel');
+
+let mode = 'spread';
+let page = 0;
+let pages = 1;
+let cols = 1;
+let step = 1;
+
+content.innerHTML = '<h1 class="ch-title">第一章 · 纸上的光</h1>' + PARAS.map((p) => `<p>${p}</p>`).join('');
+
+function fit() {
+	const pad = 28;
+	const s = Math.min((stage.clientWidth - pad) / 1024, (stage.clientHeight - pad) / 768, 1);
+	device.style.transform = `translate(-50%, -50%) scale(${s})`;
+}
+
+function layout() {
+	const W = viewport.clientWidth;
+	const H = viewport.clientHeight;
+	const single = mode === 'single';
+	const colW = single ? Math.min(W - 52, 768) : Math.min(Math.round(W * 0.39), 580);
+	const gap = single ? W - colW : Math.round(W / 2) - colW;
+	const padH = single ? Math.round((W - colW) / 2) : Math.round(gap / 2);
+	const pitch = single ? W : W / 2;
+
+	// 量之前先归零，避免上一次的位移被算进可滚动宽度
+	content.style.transition = 'none';
+	content.style.transform = 'none';
+	content.style.width = W + 'px';
+	content.style.height = H + 'px';
+	content.style.padding = `84px ${padH}px 96px`;
+	content.style.columnWidth = colW + 'px';
+	content.style.columnGap = gap + 'px';
+
+	// 强制一次布局，再读实际列数（与 App 里 measurePaged 的做法一致）
+	void content.offsetWidth;
+	cols = Math.max(1, Math.round(viewport.scrollWidth / pitch));
+	pages = single ? cols : Math.ceil(cols / 2);
+	step = W;
+	page = Math.min(page, pages - 1);
+
+	document.getElementById('tagCol').textContent = `栏宽 ${colW}px`;
+	document.getElementById('tagGutter').textContent = single ? '单栏（无中缝）' : `中缝 ${gap}px`;
+	document.getElementById('tagMargin').textContent = `页边距 ${padH}px`;
+
+	apply();
+	requestAnimationFrame(() => { content.style.transition = ''; });
+}
+
+function apply() {
+	content.style.transform = `translateX(${-page * step}px)`;
+	const single = mode === 'single';
+	if (single) {
+		pageLabel.textContent = `${page + 1} / ${cols} 页`;
+		document.getElementById('tagFoot').textContent = `页脚 ${page + 1} / ${cols}`;
+	} else {
+		const a = page * 2 + 1;
+		const b = Math.min(page * 2 + 2, cols);
+		pageLabel.textContent = a === b ? `左 ${a}` : `左 ${a} · 右 ${b}`;
+		document.getElementById('tagFoot').textContent = a === b ? `页脚 左 ${a}` : `页脚 左 ${a} · 右 ${b}`;
+	}
+	const ratio = pages <= 1 ? 1 : (page + 1) / pages;
+	progressFill.style.width = (ratio * 100).toFixed(1) + '%';
+	pctEl.textContent = (ratio * 100).toFixed(1) + '%';
+}
+
+function go(delta) {
+	const next = Math.max(0, Math.min(page + delta, pages - 1));
+	if (next === page) return;
+	page = next;
+	apply();
+}
+
+function setMode(next) {
+	mode = next;
+	document.body.classList.toggle('spread', mode === 'spread');
+	document.querySelectorAll('#modeSeg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
+	page = 0;
+	layout();
+}
+
+document.getElementById('modeSeg').addEventListener('click', (e) => {
+	const btn = e.target.closest('button');
+	if (btn) setMode(btn.dataset.mode);
+});
+
+document.getElementById('themeSeg').addEventListener('click', (e) => {
+	const btn = e.target.closest('button');
+	if (!btn) return;
+	document.body.classList.toggle('ink', btn.dataset.theme === 'ink');
+	document.querySelectorAll('#themeSeg button').forEach((b) => b.classList.toggle('on', b === btn));
+});
+
+document.getElementById('anno').addEventListener('change', (e) => {
+	document.body.classList.toggle('anno-on', e.target.checked);
+});
+
+document.getElementById('prev').onclick = () => go(-1);
+document.getElementById('next').onclick = () => go(1);
+document.getElementById('reset').onclick = () => { page = 0; apply(); };
+document.getElementById('zoneL').onclick = () => go(-1);
+document.getElementById('zoneR').onclick = () => go(1);
+
+window.addEventListener('keydown', (e) => {
+	if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+	if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+});
+
+window.addEventListener('resize', () => { fit(); layout(); });
+
+fit();
+layout();
+</script>
+</body>
+</html>

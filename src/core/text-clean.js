@@ -49,15 +49,3 @@ export function cleanMetaText(input) {
 	s = s.replace(/[\s\u3000]+/g, ' ').trim();
 	return s;
 }
-
-/**
- * 书名是否"看起来不完整"（用于导入时给出提示，不做强制修改）：
- * 只有实体残留、控制符、或全是符号时返回 true
- */
-export function looksUnclean(input) {
-	const raw = String(input ?? '');
-	if (!raw) return false;
-	if (/&#?\w+;/.test(raw)) return true;
-	if (/[\u0000-\u001f\u200b-\u200f\ufeff]/.test(raw)) return true;
-	return false;
-}

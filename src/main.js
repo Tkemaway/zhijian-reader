@@ -3,40 +3,88 @@
  * 页面切换采用交叉淡化过渡；tab 栏常驻不重建
  */
 import './app.css';
-import { icon, toast, applyInkMode } from './ui/kit.js';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
+import { icon, toast, applyInkMode, closeTopOverlay } from './ui/kit.js';
 import { loadSettings } from './store/stats.js';
+import { applyDisplayMode } from './store/display.js';
+import { getProgress } from './store/db.js';
 import { startAutoSync } from './store/auto-sync.js';
 import { reconcileDuplicateBooks } from './store/reconcile.js';
 import { renderLibrary } from './ui/library.js';
 import { renderSearch } from './ui/search.js';
 import { renderProfile } from './ui/profile.js';
 import { renderLocal } from './ui/local.js';
-import { renderReader, unmountReader } from './ui/reader.js';
+import { renderReader, closeReaderView } from './ui/reader.js';
 
 export const app = {
 	state: {
 		route: 'library',
 		settings: loadSettings(),
 		reader: null, // { book, chapterIdx, scrollTop, pageIdx }
+		scrollY: {}, // 每个 tab 上次的滚动位置（返回时恢复）
+		readingBookId: null, // 正在读的书
+		returnRoute: 'library', // 从哪个页面进的阅读器
 		_shellReady: false,
 		_switching: false
 	},
 
 	go(route, params = {}) {
+		// 阅读器是浮层：底下那页保持原样，不销毁、不重排
 		if (route === 'reader') {
+			if (this.state.route !== 'reader') {
+				const pageEl = document.getElementById('page-container');
+				if (pageEl) this.state.scrollY[this.state.route] = pageEl.scrollTop;
+				this.state.returnRoute = this.state.route;
+			}
+			this.state.readingBookId = params.book?.id || null;
 			this.state.route = 'reader';
 			this.state.reader = params;
 			renderReader(document.getElementById('app'), this);
 			return;
 		}
-		const fromReader = this.state.route === 'reader';
-		if (fromReader) {
-			unmountReader();
+		if (this.state.route === 'reader') {
+			// 收起浮层，再继续按目标路由走（不是简单回到原页面）
+			this.exitReader(this.state.readingBookId);
+			if (this.state.route === route) return;
 		}
-		if (this.state.route === route && this.state._shellReady && !fromReader) return;
+		const pageEl = document.getElementById('page-container');
+		if (pageEl) this.state.scrollY[this.state.route] = pageEl.scrollTop;
+		if (this.state.route === route && this.state._shellReady) return;
 
 		this.state.route = route;
-		this.render({ animate: true, fromReader });
+		this.render({ animate: true });
+	},
+
+	/** 阅读器关闭：只切状态与高亮，不重建书架 */
+	exitReader(bookId) {
+		const route = this.state.returnRoute || 'library';
+		this.state.route = route;
+		this.state.reader = null;
+		this.updateTabs(document.getElementById('app'));
+		// 退出阅读器后把系统栏颜色交还给 App 主题
+		const meta = document.querySelector('meta[name="theme-color"]');
+		if (meta) {
+			meta.content = document.body.classList.contains('eink') ? '#ffffff'
+				: document.body.classList.contains('ink-mode') ? '#e8e7e1' : '#faf8f5';
+		}
+		if (bookId) this.refreshReadCard(bookId);
+	},
+
+	/** 原位点亮刚读完的那本，并把进度线补到最新（不重排书架） */
+	async refreshReadCard(bookId) {
+		const card = document.querySelector(`.book-card[data-book-id="${CSS.escape(bookId)}"]`);
+		if (!card) return;
+		card.classList.add('just-read');
+		setTimeout(() => card.classList.remove('just-read'), 1100);
+		try {
+			const total = Number(card.dataset.total) || 0;
+			const p = await getProgress(bookId);
+			if (!total || !p) return;
+			const pct = Math.min(100, Math.round((((p.chapterIdx || 0) + 1) / total) * 100));
+			const bar = card.querySelector('.bc-line i');
+			if (bar) bar.style.width = `${pct}%`;
+		} catch { /* 进度线更新失败不影响返回 */ }
 	},
 
 	/** 重渲当前页（无过渡，用于数据刷新） */
@@ -124,16 +172,23 @@ export const app = {
 		const container = root.querySelector('#page-container');
 		if (!container) return;
 		const route = this.state.route;
+		// 阅读器是浮层，底下这页保持原样（包括滚动位置与已渲染的卡片）
+		if (route === 'reader') return;
 		container.innerHTML = '';
+		container.dataset.route = route;
 		container.classList.remove('page-enter');
 		container.classList.add('page-enter');
 		if (route === 'library') await renderLibrary(container, this);
 		else if (route === 'search') await renderSearch(container, this);
 		else if (route === 'local') await renderLocal(container, this);
 		else if (route === 'profile') await renderProfile(container, this);
+
+		// 恢复该页上次的滚动位置
+		const y = this.state.scrollY?.[route];
+		if (y) container.scrollTop = y;
 	},
 
-	render({ animate = false, fromReader = false } = {}) {
+	render({ animate = false } = {}) {
 		const root = document.getElementById('app');
 		if (!this.state._shellReady || !root.querySelector('.app-shell')) {
 			this.buildShell(root);
@@ -143,15 +198,6 @@ export const app = {
 		}
 
 		this.updateTabs(root);
-
-		// 从阅读器返回：页面已在背后，只需淡入
-		if (fromReader) {
-			const container = root.querySelector('#page-container');
-			container.classList.remove('page-enter');
-			container.classList.add('page-enter');
-			this.renderPage(root);
-			return;
-		}
 
 		if (!animate) {
 			this.renderPage(root);
@@ -171,9 +217,29 @@ export const app = {
 	}
 };
 
+// 系统返回键：先关面板 → 再退阅读器 → 再回书架 → 最后才退出 App
+// （Android 上不接管的话，任何页面按返回都会直接回桌面）
+function handleBack() {
+	if (closeTopOverlay()) return true;
+	if (app.state.route === 'reader') return closeReaderView();
+	if (app.state.route !== 'library') {
+		app.go('library');
+		return true;
+	}
+	return false;
+}
+
+if (Capacitor.isNativePlatform()) {
+	CapApp.addListener('backButton', () => {
+		if (handleBack()) return;
+		CapApp.exitApp();
+	});
+}
+
 // 启动
 const bootSettings = loadSettings();
 applyInkMode(bootSettings.inkMode);
+applyDisplayMode(bootSettings);
 app.render();
 
 // 启动即整理书架：把历史上被旧同步逻辑复制出来的重复记录合并回一条。

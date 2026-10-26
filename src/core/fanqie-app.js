@@ -579,6 +579,3 @@ export async function fqAppChapter(chapterUrl) {
 		return paragraphs;
 	});
 }
-
-/** 调试接口（内部使用） */
-export function _debugFq() { return getFq(); }

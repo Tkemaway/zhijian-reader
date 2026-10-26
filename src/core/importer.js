@@ -1,6 +1,7 @@
 import { cleanMetaText } from './text-clean.js';
+import { parseComicEpub, parseCbz } from './comic-book.js';
 /**
- * 本地书籍导入 —— TXT / EPUB 解析
+ * 本地书籍导入 —— TXT / EPUB / CBZ 解析
  *
  * EPUB：ZIP → META-INF/container.xml → OPF（书名/作者/spine 顺序）→ 各章节 XHTML → 段落
  * TXT：编码检测（BOM / UTF-8 / GBK）→ 章节标题正则切分（无标题则按字数兜底切分）
@@ -158,7 +159,7 @@ export function parseEpub(buffer, DOMParserImpl) {
 	}
 
 	if (!chapters.length) throw new Error('EPUB 中没有解析到正文');
-	return { title: title || '未命名书籍', author, chapters };
+	return { kind: 'text', title: title || '未命名书籍', author, chapters };
 }
 
 // ============================================================
@@ -234,18 +235,55 @@ export function parseTxt(buffer, filename = '') {
 
 	if (!out.length) throw new Error('TXT 中没有解析到正文');
 	return {
+		kind: 'text',
 		title: cleanMetaText(titleFromPre || cleanTitle || '未命名书籍'),
 		author: cleanMetaText(authorFromPre),
 		chapters: out
 	};
 }
 
-/** 按文件扩展名分派解析 */
+/**
+ * 按文件扩展名分派解析
+ *
+ * EPUB 的判定要两段：先按文字书解析（章节 XHTML 有正文），
+ * 失败再按漫画解析（spine 里是图片、或 XHTML 只包了一层 <img>）。
+ * 漫画 EPUB 用文字解析一定会抛「没有解析到正文」，正好作为降级信号。
+ */
 export function parseBookFile(buffer, filename, DOMParserImpl) {
-	if (/\.epub$/i.test(filename)) return parseEpub(buffer, DOMParserImpl);
-	if (/\.(txt|text)$/i.test(filename)) return parseTxt(buffer, filename);
-	// 未知扩展名：按 ZIP magic 判断 EPUB，否则当 TXT
-	const head = new Uint8Array(buffer instanceof Uint8Array ? buffer.slice(0, 4) : buffer.slice(0, 4));
-	if (head[0] === 0x50 && head[1] === 0x4b) return parseEpub(buffer, DOMParserImpl);
-	return parseTxt(buffer, filename);
+	const name = String(filename || '');
+	if (/\.(txt|text)$/i.test(name)) return parseTxt(buffer, name);
+	if (/\.cbz$/i.test(name)) return parseCbz(buffer, name);
+	if (/\.cbr$/i.test(name)) throw new Error('暂不支持 CBR（RAR 压缩）；请转成 CBZ 或 EPUB 再导入');
+
+	if (/\.epub$/i.test(name)) {
+		try {
+			return parseEpub(buffer, DOMParserImpl);
+		} catch (textErr) {
+			try {
+				return parseComicEpub(buffer, DOMParserImpl);
+			} catch {
+				throw textErr;
+			}
+		}
+	}
+
+	// 未知扩展名：ZIP magic（PK）先按 EPUB 试，再按 CBZ 试；否则当 TXT
+	const view = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+	const head = view.slice(0, 4);
+	if (head[0] === 0x50 && head[1] === 0x4b) {
+		try {
+			return parseEpub(buffer, DOMParserImpl);
+		} catch (textErr) {
+			try {
+				return parseComicEpub(buffer, DOMParserImpl);
+			} catch {
+				try {
+					return parseCbz(buffer, name);
+				} catch {
+					throw textErr;
+				}
+			}
+		}
+	}
+	return parseTxt(buffer, name);
 }

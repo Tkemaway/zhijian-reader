@@ -14,7 +14,7 @@
 import { requestBytes, requestText } from '../core/http.js';
 import {
 	getBooks, getBook, updateBook, addBook, saveToc, saveChapters, getToc, getChapter,
-	saveBookFile, getBookFile, hasBookFile
+	saveBookFile, getBookFile
 } from './db.js';
 import { parseBookFile } from '../core/importer.js';
 import { buildEpubFromChapters, epubFileName } from '../core/epub-build.js';
@@ -223,9 +223,33 @@ function localGradient(str) {
 	return `linear-gradient(145deg, hsl(${h} 24% 34%), hsl(${(h + 40) % 360} 30% 22%))`;
 }
 
+/** 漫画总页数（书架展示与导入提示用） */
+export function comicPageCount(parsed) {
+	let n = 0;
+	for (const ch of parsed?.chapters || []) n += ch.images?.length || 0;
+	return n;
+}
+
+/**
+ * 把解析结果写进章节表（文字 / 漫画共用）。
+ * 漫画一章就是一组图片，单条记录可能有几十 MB，批次要小得多。
+ */
+export async function saveParsedChapters(bookId, parsed) {
+	const isComic = parsed.kind === 'comic';
+	const list = parsed.chapters.map((c, idx) => (isComic
+		? { idx, title: c.title, images: c.images, url: '', totalChars: 0 }
+		: { idx, title: c.title, paragraphs: c.paragraphs, url: '', totalChars: (c.paragraphs || []).join('').length }));
+	const batch = isComic ? 3 : 80;
+	for (let i = 0; i < list.length; i += batch) {
+		await saveChapters(bookId, list.slice(i, i + batch));
+	}
+	return list.length;
+}
+
 /** 把解析结果写入书架（本地导入 / 云端下载共用） */
 async function importParsedBook({ parsed, name, hash, remoteName, size }) {
 	const total = parsed.chapters.length;
+	const isComic = parsed.kind === 'comic';
 	const book = {
 		id: `imp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
 		title: parsed.title || String(name).replace(/\.[^.]+$/, ''),
@@ -233,9 +257,11 @@ async function importParsedBook({ parsed, name, hash, remoteName, size }) {
 		coverStyle: localGradient(parsed.title || name),
 		sourceId: 'local',
 		sourceName: '本地导入',
+		kind: isComic ? 'comic' : '',
 		bookUrl: '',
 		tocUrl: '',
 		totalChapters: total,
+		totalPages: isComic ? comicPageCount(parsed) : 0,
 		cachedChapters: total,
 		addedAt: Date.now(),
 		lastReadAt: 0,
@@ -248,16 +274,7 @@ async function importParsedBook({ parsed, name, hash, remoteName, size }) {
 	const saved = await addBook(book);
 	const realId = saved?.id || book.id;
 	await saveToc(realId, parsed.chapters.map((c) => ({ title: c.title, url: '' })));
-	const list = parsed.chapters.map((c, idx) => ({
-		idx,
-		title: c.title,
-		paragraphs: c.paragraphs,
-		url: '',
-		totalChars: (c.paragraphs || []).join('').length
-	}));
-	for (let i = 0; i < list.length; i += 80) {
-		await saveChapters(realId, list.slice(i, i + 80));
-	}
+	await saveParsedChapters(realId, parsed);
 	return saved;
 }
 
@@ -310,6 +327,8 @@ export async function uploadLocalBookFile(book, { force = false } = {}) {
  * @returns {Promise<object|null>} 更新后的书籍记录
  */
 async function rebuildLocalFile(book) {
+	// 漫画无法用「缓存章节」重建成文件（原图已在章节里），只能提示重新导入
+	if (book.kind === 'comic') return null;
 	const toc = (await getToc(book.id)) || [];
 	if (!toc.length) return null;
 	const chapters = [];

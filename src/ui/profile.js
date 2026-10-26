@@ -1,9 +1,11 @@
 /**
  * 我的页 —— 阅读统计 + 防沉迷限额 + 书源管理
  */
-import sources from '../core/sources.js';
+import sources, { refreshSources } from '../core/sources.js';
+import { addCustomSources, removeCustomSource } from '../core/custom-sources.js';
 import { loadSettings, saveSettings, applyPaperInkPreset, getWeekData, getTodaySeconds, getLimitStateWithExtra, fmtDuration } from '../store/stats.js';
 import { keepAwake } from '../store/wakelock.js';
+import { applyDisplayMode } from '../store/display.js';
 import { getBooks } from '../store/db.js';
 import { loadSyncConfig, isSyncEnabled, enableSync, enableDavSync, disableSync, syncNow, getPendingLocalDownloads } from '../store/sync.js';
 import { kickAutoSync } from '../store/auto-sync.js';
@@ -11,8 +13,9 @@ import {
 	loadFileSyncConfig, saveFileSyncConfig, isFileSyncEnabled,
 	uploadAllPending, downloadAndImport, testFileSyncConnection, normalizeDavUrl, JIANGUOYUN_DAV
 } from '../store/book-files.js';
-import { icon, toast, showDialog, showSheet, applyInkMode } from './kit.js';
+import { toast, showDialog, showSheet, applyInkMode } from './kit.js';
 import { escapeHtml } from './library.js';
+import { fqAppSearch, fqAppToc, fqAppChapter } from '../core/fanqie-app.js';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '开发版';
 
@@ -22,8 +25,16 @@ export async function renderProfile(container, app) {
 	const todaySec = getTodaySeconds();
 	const limit = getLimitStateWithExtra();
 
+	// 先落一版骨架：切页时立刻有东西可看，不让入场动画播在空容器上
+	container.innerHTML = `
+		<div class="page-title">我的</div>
+		<div class="page-subtitle">读书是把时间酿成酒</div>
+		<div class="card skeleton" style="height:196px"></div>`;
+
 	let books = [];
 	try { books = await getBooks(); } catch { /* ignore */ }
+	// 加载期间用户已经切走：别再往旧页面里写
+	if (container.dataset.route !== 'profile') return;
 	const totalChapters = books.reduce((a, b) => a + (b.cachedChapters || 0), 0);
 
 	const maxSec = Math.max(...week.map((d) => d.seconds), 60);
@@ -97,6 +108,20 @@ export async function renderProfile(container, app) {
 				</div>
 				<label class="switch"><input type="checkbox" id="grain-switch" ${settings.paperGrain ? 'checked' : ''} /><span class="switch-rail"></span></label>
 			</div>
+			<div class="setting-row" id="eink-row">
+				<div>
+					<div class="setting-label">墨水屏优化</div>
+					<div class="setting-hint" id="eink-hint">纯黑白 · 关闭玻璃与阴影</div>
+				</div>
+				<div class="setting-value" id="eink-value">自动</div>
+			</div>
+			<div class="setting-row" id="motion-row">
+				<div>
+					<div class="setting-label">界面动效</div>
+					<div class="setting-hint" id="motion-hint">淡入淡出 · 翻页动画</div>
+				</div>
+				<div class="setting-value" id="motion-value">自动</div>
+			</div>
 			<div class="setting-row" id="quick-theme">
 				<div class="setting-label">阅读主题</div>
 				<div class="setting-value" id="theme-value">纸白</div>
@@ -132,7 +157,10 @@ export async function renderProfile(container, app) {
 			</div>
 		</div>
 
-		<div class="section-title">书源（${sources.filter((s) => s.enabled !== false).length} 个启用）</div>
+		<div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+			<span>书源（${sources.filter((s) => s.enabled !== false).length} 个启用${sources.some((s) => s.kind === 'comic') ? ` · ${sources.filter((s) => s.kind === 'comic').length} 个漫画` : ''}）</span>
+			<button class="btn btn-soft btn-sm" id="add-source" style="margin-bottom:8px">添加</button>
+		</div>
 		<div class="card" id="source-list"></div>
 
 		<div class="section-title">关于</div>
@@ -206,6 +234,62 @@ export async function renderProfile(container, app) {
 	});
 	container.querySelector('#grain-switch').addEventListener('change', (e) => {
 		saveSettings({ paperGrain: e.target.checked });
+	});
+
+	// ---------- 墨水屏优化 / 动效档位 ----------
+	const einkNames = { auto: '自动', on: '开启', off: '关闭' };
+	const motionNames = { auto: '自动', full: '完整', lite: '精简', off: '关闭' };
+	const syncDisplayRows = () => {
+		const st = loadSettings();
+		const { eink, motion } = applyDisplayMode(st);
+		container.querySelector('#eink-value').textContent = einkNames[st.einkMode] || '自动';
+		container.querySelector('#eink-hint').textContent = eink
+			? '纯黑白 · 已按墨水屏渲染'
+			: '当前为普通屏幕配色';
+		container.querySelector('#motion-value').textContent = motionNames[st.motion] || '自动';
+		container.querySelector('#motion-hint').textContent = st.motion === 'auto'
+			? `跟随屏幕（当前：${motion === 'lite' ? '精简' : motion === 'off' ? '关闭' : '完整'}）`
+			: { full: '所有过渡与翻页动画', lite: '保留淡化翻页，去掉位移与模糊', off: '关闭全部动效' }[st.motion] || '';
+	};
+	syncDisplayRows();
+
+	const pickOption = (title, hint, options, current, onPick) => {
+		showSheet({
+			title,
+			build: (body, close) => {
+				const wrap = document.createElement('div');
+				wrap.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+				options.forEach(([k, label]) => {
+					const b = document.createElement('button');
+					b.className = 'btn btn-block ' + (current === k ? 'btn-primary' : 'btn-soft');
+					b.textContent = label;
+					b.onclick = () => { onPick(k); close(); syncDisplayRows(); };
+					wrap.appendChild(b);
+				});
+				const note = document.createElement('p');
+				note.className = 'setting-hint';
+				note.style.marginTop = '6px';
+				note.textContent = hint;
+				wrap.appendChild(note);
+				body.appendChild(wrap);
+			}
+		});
+	};
+
+	container.querySelector('#eink-row').addEventListener('click', () => {
+		pickOption('墨水屏优化',
+			'开启后整站改用纯黑白配色，并关闭模糊、阴影与位移动画。自动模式按设备特征识别。',
+			[['auto', '自动识别'], ['on', '始终开启'], ['off', '关闭']],
+			loadSettings().einkMode || 'auto',
+			(k) => { saveSettings({ einkMode: k }); toast(k === 'off' ? '已关闭墨水屏优化' : '屏幕模式已更新', 1600); });
+	});
+
+	container.querySelector('#motion-row').addEventListener('click', () => {
+		pickOption('界面动效',
+			'「精简」保留淡入淡出与翻页动画，只去掉位移和实时模糊；墨水屏会自动选这一档。',
+			[['auto', '自动'], ['full', '完整'], ['lite', '精简'], ['off', '关闭']],
+			loadSettings().motion || 'auto',
+			(k) => { saveSettings({ motion: k }); toast('动效设置已更新', 1400); });
 	});
 
 	// ---------- 前光色温（Kindle 式档位：2700K 琥珀 ↔ 6500K 冷白） ----------
@@ -341,19 +425,31 @@ export async function renderProfile(container, app) {
 		const row = document.createElement('div');
 		row.className = 'setting-row';
 		const isFanqieApp = s.type === 'fanqie-app';
+		const kindTag = s.kind === 'comic' ? '<span class="src-tag">漫画</span>' : '';
 		const hint = isFanqieApp
 			? 'APP 协议源 · 全本直连（实验性）'
 			: `${s.type === 'legado' ? '阅读系规则' : 'SoNovel 规则'} · ${escapeHtml(s.url)}`;
 		row.innerHTML = `
-			<div>
-				<div class="setting-label">${escapeHtml(s.name)}</div>
-				<div class="setting-hint">${hint}</div>
+			<div style="min-width:0">
+				<div class="setting-label">${escapeHtml(s.name)} ${kindTag}${s.custom ? '<span class="src-tag src-tag-custom">自定义</span>' : ''}</div>
+				<div class="setting-hint" style="word-break:break-all">${hint}</div>
 			</div>
 			${isFanqieApp ? '<button class="btn btn-soft btn-sm" style="margin-right:10px">自检</button>' : ''}
+			${s.custom ? '<button class="btn btn-soft btn-sm src-del" style="margin-right:8px">删除</button>' : ''}
 			<label class="switch"><input type="checkbox" data-sidx="${i}" ${s.enabled !== false ? 'checked' : ''} /><span class="switch-rail"></span></label>`;
 		listEl.appendChild(row);
 		if (isFanqieApp) {
 			row.querySelector('button').addEventListener('click', () => runFanqieSelfTest());
+		}
+		if (s.custom) {
+			row.querySelector('.src-del').addEventListener('click', () => {
+				const ok = confirm(`删除书源「${s.name}」？`);
+				if (!ok) return;
+				removeCustomSource(s.id);
+				refreshSources();
+				toast('书源已删除');
+				app.refresh();
+			});
 		}
 	});
 	listEl.querySelectorAll('input[data-sidx]').forEach((input) => {
@@ -367,6 +463,52 @@ export async function renderProfile(container, app) {
 			} catch { /* ignore */ }
 			toast(`${src.name} 已${input.checked ? '启用' : '停用'}`);
 		});
+	});
+
+	container.querySelector('#add-source').addEventListener('click', () => showAddSourcePanel(app));
+}
+
+/**
+ * 添加书源（Legado JSON）
+ * 漫画源靠 bookSourceType=2 自动识别；普通小说源留空即可
+ */
+function showAddSourcePanel(app) {
+	showSheet({
+		title: '添加书源',
+		build: (body, close) => {
+			const hint = document.createElement('p');
+			hint.className = 'setting-hint';
+			hint.style.cssText = 'line-height:1.75;margin-bottom:12px';
+			hint.innerHTML = '粘贴 <b>Legado（阅读 3.0）书源</b> 的 JSON（单条或数组）。<br>漫画源会带 <code>bookSourceType: 2</code>，添加后自动归到「漫画」分类。';
+			body.appendChild(hint);
+
+			const ta = document.createElement('textarea');
+			ta.placeholder = '{ "bookSourceName": "…", "bookSourceUrl": "…", "bookSourceType": 2, … }';
+			ta.style.cssText = 'width:100%;box-sizing:border-box;height:180px;border:1px solid var(--line);border-radius:10px;padding:12px;font:inherit;font-size:12px;line-height:1.6;background:var(--elev-2);color:var(--ink);resize:vertical';
+			body.appendChild(ta);
+
+			const status = document.createElement('p');
+			status.className = 'setting-hint';
+			status.style.marginTop = '10px';
+			body.appendChild(status);
+
+			const btn = document.createElement('button');
+			btn.className = 'btn btn-primary btn-block';
+			btn.style.marginTop = '12px';
+			btn.textContent = '添加';
+			btn.onclick = () => {
+				try {
+					const r = addCustomSources(ta.value);
+					refreshSources();
+					toast(r.added ? `已添加 ${r.added} 个书源${r.skipped ? `（${r.skipped} 个已存在）` : ''}` : '这些书源都已经添加过了');
+					close();
+					app.refresh();
+				} catch (e) {
+					status.textContent = `添加失败：${e.message || e}`;
+				}
+			};
+			body.appendChild(btn);
+		}
 	});
 }
 
@@ -556,7 +698,7 @@ function showFileSyncPanel(container, onChanged) {
 			const hint = document.createElement('p');
 			hint.className = 'setting-hint';
 			hint.style.cssText = 'margin-bottom:12px;line-height:1.75';
-			hint.innerHTML = '把导入的 EPUB / TXT 原文件同步到网盘，另一台设备同步时自动下载导入（阅读进度照常同步）。<br>推荐 <b>坚果云</b>：免费、国内直连快、不需要服务器。<br>首次使用请先在坚果云网页版 <b>我的文件 → 新建文件夹「zhijian」</b>（坚果云不允许在根目录直接放文件）。<br>密码用「应用密码」：网页版 → 账户信息 → 安全选项 → 添加应用密码。';
+			hint.innerHTML = '把导入的 EPUB / TXT / 漫画原文件同步到网盘，另一台设备同步时自动下载导入（阅读进度照常同步）。<br>推荐 <b>坚果云</b>：免费、国内直连快、不需要服务器。<br>首次使用请先在坚果云网页版 <b>我的文件 → 新建文件夹「zhijian」</b>（坚果云不允许在根目录直接放文件）。<br>密码用「应用密码」：网页版 → 账户信息 → 安全选项 → 添加应用密码。';
 			body.appendChild(hint);
 
 			const fields = [
@@ -772,7 +914,6 @@ function runFanqieSelfTest() {
 				log.textContent += `${ok === true ? '✅' : ok === false ? '❌' : '…'} ${msg}\n`;
 			};
 			(async () => {
-				const { fqAppSearch, fqAppToc, fqAppChapter } = await import('../core/fanqie-app.js');
 				// 每一步独立捕获：一处失败不影响其余环节的诊断
 				let t = Date.now();
 				let results = null;

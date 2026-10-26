@@ -332,11 +332,123 @@ function sanitizeLegadoContent(html, DOMParserImpl) {
 	return s;
 }
 
-function refererHeaders(source) {
+export function refererHeaders(source) {
 	const headers = {};
 	try {
 		const u = new URL(source.url);
 		headers.Referer = `${u.protocol}//${u.host}`;
 	} catch { /* ignore */ }
 	return headers;
+}
+
+// ============================================================
+//  漫画书源
+// ============================================================
+
+/** 站点装饰图（logo/广告/图标/占位图）——不要当成漫画页 */
+const BAD_IMAGE_RE = /(logo|banner|advert|ads?[-_/]|ad[-_/]|icon|avatar|qrcode|qr[-_]?code|placeholder|loading|lazy[-_]?load|spacer|blank|pixel|captcha|share|btn|button|sprite)/i;
+
+/** 从 <img> 上挑出真实地址（兼容懒加载属性） */
+function pickImageUrl(img, baseUrl) {
+	const attrs = [
+		'data-original', 'data-src', 'data-lazy-src', 'data-echo', 'data-url',
+		'data-original-src', 'data-lazy', 'data-actualsrc', 'src'
+	];
+	let raw = '';
+	for (const a of attrs) {
+		const v = (img.getAttribute?.(a) || '').trim();
+		if (!v) continue;
+		// 常见的 1px 占位 gif / svg 跳过，继续找下一个属性
+		if (/^data:image\/(gif|svg)/i.test(v) && v.length < 400) continue;
+		raw = v;
+		break;
+	}
+	if (!raw) {
+		const srcset = (img.getAttribute?.('srcset') || '').trim();
+		if (srcset) raw = srcset.split(',')[0].trim().split(/\s+/)[0];
+	}
+	if (!raw) return '';
+	if (/^data:image\//i.test(raw)) return raw; // 内嵌 base64，可直接给 <img>
+	if (/^(blob|about|javascript):/i.test(raw)) return '';
+	try {
+		return new URL(raw, baseUrl).href;
+	} catch {
+		return '';
+	}
+}
+
+/** 判断一个地址像不像漫画页 */
+function isUsableImage(url, img, source) {
+	if (!url) return false;
+	if (/^data:image\//i.test(url)) return true;
+	if (BAD_IMAGE_RE.test(url)) return false;
+	// 明确是图片扩展名 → 通过；没有扩展名的 CDN 地址也放行（只排除明显是网页的）
+	if (/\.(html?|php|jsp|aspx?)(?:$|[?#])/i.test(url)) return false;
+	if (img) {
+		const w = parseInt(img.getAttribute?.('width') || '', 10);
+		const h = parseInt(img.getAttribute?.('height') || '', 10);
+		if ((w && w <= 60) || (h && h <= 60)) return false;
+		const alt = (img.getAttribute?.('alt') || '') + (img.getAttribute?.('class') || '');
+		if (BAD_IMAGE_RE.test(alt)) return false;
+	}
+	// 书源可以自定义白/黑名单
+	if (source?.comicInclude) {
+		try { if (!new RegExp(source.comicInclude, 'i').test(url)) return false; } catch { /* ignore */ }
+	}
+	if (source?.comicExclude) {
+		try { if (new RegExp(source.comicExclude, 'i').test(url)) return false; } catch { /* ignore */ }
+	}
+	return true;
+}
+
+/** 从一段 HTML / 文档里按顺序收集图片地址 */
+export function collectComicImages(htmlOrDoc, baseUrl, source, DOMParserImpl) {
+	let doc = htmlOrDoc;
+	if (typeof htmlOrDoc === 'string') {
+		doc = new DOMParserImpl().parseFromString(htmlOrDoc, 'text/html');
+	}
+	if (!doc) return [];
+	const urls = [];
+	const seen = new Set();
+	for (const img of doc.querySelectorAll('img')) {
+		const url = pickImageUrl(img, baseUrl);
+		if (!url || seen.has(url) || !isUsableImage(url, img, source)) continue;
+		seen.add(url);
+		urls.push(url);
+	}
+	return urls;
+}
+
+/**
+ * 获取漫画一话的图片地址列表
+ * 优先用书源的内容规则圈定范围（避免把页面上的 logo / 推荐位当成漫画页）
+ */
+export async function fetchComicChapter(source, chapterUrl, DOMParserImpl, { signal } = {}) {
+	if (!source) return { imageUrls: [], error: '书源缺失' };
+	if (!chapterUrl) return { imageUrls: [], error: '章节地址缺失' };
+	try {
+		const resp = await robustRequest(chapterUrl, { headers: refererHeaders(source), signal });
+		const parser = new DOMParserImpl();
+		let urls = [];
+
+		// 1) 先按内容规则取正文 HTML，再从中找图
+		try {
+			const parsed = getAdapter(source).parseChapter(resp.text, resp.finalUrl, source, DOMParserImpl);
+			if (parsed?.contentHtml) {
+				urls = collectComicImages(parsed.contentHtml, resp.finalUrl, source, DOMParserImpl);
+			}
+		} catch { /* 规则不匹配就走整页 */ }
+
+		// 2) 规则没圈到图 → 整页扫（再过滤装饰图）
+		if (!urls.length) {
+			urls = collectComicImages(resp.text, resp.finalUrl, source, DOMParserImpl);
+		}
+
+		if (!urls.length) {
+			return { imageUrls: [], error: '这一话没有解析到图片（该来源可能靠脚本加载图片）', finalUrl: resp.finalUrl };
+		}
+		return { imageUrls: urls, error: null, finalUrl: resp.finalUrl };
+	} catch (e) {
+		return { imageUrls: [], error: e.message || '图片地址获取失败' };
+	}
 }

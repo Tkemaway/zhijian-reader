@@ -14,7 +14,6 @@ import { isFileSyncEnabled, uploadAllPending, downloadAndImport } from './book-f
 
 const MIN_GAP = 30 * 1000; // 非强制触发的最小间隔
 
-let _timer = null;
 let _running = false;
 let _lastRun = 0;
 let _notify = null;
@@ -91,7 +90,6 @@ export async function runAutoSync({ force = false, reason = 'timer' } = {}) {
  */
 export function startAutoSync({ notify } = {}) {
 	_notify = typeof notify === 'function' ? notify : null;
-	if (_timer) clearInterval(_timer);
 
 	// 启动后稍等（让首屏渲染完成）再跑
 	setTimeout(() => { runAutoSync({ force: true, reason: 'boot' }).catch(() => {}); }, 2500);

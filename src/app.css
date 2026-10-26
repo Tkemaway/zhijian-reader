@@ -37,7 +37,6 @@
 	--danger: #c0392b;
 
 	/* 圆角层级 */
-	--r-sm: 10px;
 	--r-md: 14px;
 	--r-lg: 20px;
 	--r-xl: 28px;
@@ -163,7 +162,7 @@ img { display: block; max-width: 100%; }
 		0 12px 30px rgba(40, 30, 15, 0.16),
 		inset 0 1px 0 rgba(255, 255, 255, 0.6);
 	transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease);
-	touch-action: none; /* 让底栏上的横向滑动不被页面滚动吃掉 */
+	touch-action: pan-y; /* 横向手势自己处理，竖向仍交给页面滚动 */
 }
 /* 按下时整体轻微压扁放大（对齐源项目的 press 反馈） */
 .tabbar.is-pressing {
@@ -242,8 +241,8 @@ img { display: block; max-width: 100%; }
 }
 .btn:active { transform: scale(0.97); opacity: 0.85; }
 .btn-primary { background: var(--ink); color: #fff; }
+.btn-danger { background: var(--danger); color: #fff; }
 .btn-soft { background: var(--elev-2); color: var(--ink); }
-.btn-accent { background: var(--accent); color: #fff; }
 .btn-sm { padding: 8px 14px; font-size: 13.5px; border-radius: 10px; }
 .btn-block { width: 100%; }
 .btn[disabled] { opacity: 0.45; pointer-events: none; }
@@ -473,21 +472,6 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 /* 搜索结果行进场 */
 .result-row-enter { animation: fadeUp 0.45s var(--ease-out) both; }
 
-/* 按钮/卡片按下的柔和反馈 */
-.tap-scale { transition: transform 0.18s var(--ease), opacity 0.18s var(--ease); }
-.tap-scale:active { transform: scale(0.97); }
-
-/* ---------- 列表项 ---------- */
-.list-item {
-	display: flex;
-	align-items: center;
-	gap: 14px;
-	padding: 14px 0;
-}
-.list-item + .list-item { border-top: 0.5px solid var(--line); }
-
-.chevron { color: var(--ink-4); flex-shrink: 0; }
-
 /* ============================================================
    页面组件补充
    ============================================================ */
@@ -555,41 +539,6 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 .rs-hint { font-size: 12px; color: var(--ink-2); margin-top: 9px; }
 .read-status-card.over .progress-fill { background: var(--accent); }
 
-/* ---------- 继续阅读卡 ---------- */
-.continue-card {
-	display: flex;
-	gap: 14px;
-	background: var(--elev);
-	border-radius: var(--r-lg);
-	box-shadow: var(--sh-1);
-	padding: 14px;
-	align-items: center;
-	transition: transform 0.2s var(--ease);
-	margin-bottom: 8px;
-}
-.continue-card:active { transform: scale(0.985); }
-.cc-cover {
-	width: 54px; height: 76px;
-	border-radius: 9px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	color: #fff;
-	font-family: var(--font-reading);
-	font-size: 11.5px;
-	padding: 7px 5px;
-	text-align: center;
-	overflow: hidden;
-	line-height: 1.35;
-	flex-shrink: 0;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-}
-.cc-info { flex: 1; min-width: 0; }
-.cc-label { font-size: 11px; color: var(--accent); font-weight: 750; letter-spacing: 0.08em; margin-bottom: 5px; }
-.cc-title { font-size: 16.5px; font-weight: 720; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.01em; }
-.cc-chapter { font-size: 12.5px; color: var(--ink-2); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cc-play { color: var(--ink-3); flex-shrink: 0; padding-right: 2px; }
-
 /* ---------- 书架（Kindle 规范：固定 2:3 封面 + 固定书名槽）---------- */
 .shelf-top { display: flex; align-items: flex-end; justify-content: space-between; }
 .shelf-title { font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -0.02em; }
@@ -609,7 +558,18 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 	padding: 8px 0;
 	color: var(--ink-2);
 }
+.shelf-sync { position: relative; }
 .shelf-sync svg { display: block; }
+/* 有书还没上传时的小圆点 */
+.shelf-sync.has-pending::after {
+	content: '';
+	position: absolute;
+	top: 7px; right: 7px;
+	width: 6px; height: 6px;
+	border-radius: 50%;
+	background: var(--accent);
+	box-shadow: 0 0 0 2px var(--bg);
+}
 .shelf-sync.is-busy svg { animation: shelf-spin 0.9s linear infinite; }
 @keyframes shelf-spin { to { transform: rotate(360deg); } }
 
@@ -622,7 +582,7 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 .chip.is-on { background: var(--ink); border-color: var(--ink); color: #fff; }
 .shelf-sort { margin-left: auto; border: 0; background: transparent; color: var(--ink-3); font: inherit; font-size: 12px; padding: 6px 2px; }
 
-/* 网格：列数只改 --cols / --gap（见报告 4.1） */
+/* 网格：列数只改 --cols / --gap（3.2.9 的排布） */
 .book-grid {
 	--cols: 3;
 	--gap: 12px;
@@ -687,6 +647,16 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 	background: rgba(0, 0, 0, 0.36);
 	color: rgba(255, 255, 255, 0.92);
 }
+.bc-kind {
+	position: absolute;
+	left: 6px; bottom: 6px;
+	font-size: 9px; line-height: 1;
+	padding: 3px 5px;
+	border-radius: 4px;
+	background: rgba(0, 0, 0, 0.4);
+	color: rgba(255, 255, 255, 0.94);
+	letter-spacing: 0.06em;
+}
 .bc-check {
 	position: absolute;
 	top: 6px; right: 6px;
@@ -700,6 +670,13 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 }
 .book-card.selected .bc-check { opacity: 1; transform: scale(1); }
 .book-card.selected .bc-cover { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* 从阅读器返回：刚读的那本亮一下 */
+.book-card.just-read .bc-cover { animation: just-read 1.1s var(--ease-out); }
+@keyframes just-read {
+	0% { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06), 0 0 0 0 rgba(168, 118, 62, 0.45); }
+	28% { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06), 0 0 0 3px rgba(168, 118, 62, 0.32); }
+	100% { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06), 0 0 0 0 rgba(168, 118, 62, 0); }
+}
 
 .bc-line { height: 2px; border-radius: 1px; background: var(--line); margin-top: 8px; overflow: hidden; }
 .bc-line i { display: block; height: 100%; background: var(--ink-3); }
@@ -732,7 +709,7 @@ input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
 .resume-card {
 	display: flex; align-items: center; gap: 12px;
 	padding: 12px 16px; margin-top: 14px;
-	border-radius: 12px; background: var(--elev-1);
+	border-radius: 12px; background: var(--elev);
 }
 .resume-cover {
 	width: 48px; height: 72px; flex: 0 0 48px;
@@ -778,8 +755,6 @@ body.ink-mode .sel-bar { background: #fbfaf7; backdrop-filter: none; }
 	.sel-bar { left: 50%; right: auto; width: 430px; transform: translate(-50%, calc(100% + 120px)); }
 	.sel-bar.show { transform: translate(-50%, 0); }
 }
-/* 平板宽屏书架列宽 */
-.shelf-hint { font-size: 11.5px; color: var(--ink-3); margin-top: 6px; }
 
 /* ---------- 搜索结果 ---------- */
 .search-status {
@@ -806,7 +781,23 @@ body.ink-mode .sel-bar { background: #fbfaf7; backdrop-filter: none; }
 	border-radius: 6px;
 	font-weight: 750;
 	flex-shrink: 0;
+	margin-left: 6px;
 }
+/* 漫画结果的标记：和「直达」区分开 */
+.rr-tag-comic { background: rgba(168, 118, 62, 0.14); color: #a8763e; }
+/* 书源列表里的小标签 */
+.src-tag {
+	display: inline-block;
+	font-size: 9.5px;
+	line-height: 1;
+	padding: 2.5px 5px;
+	border-radius: 4px;
+	background: var(--accent-soft);
+	color: var(--accent);
+	vertical-align: 1px;
+	font-weight: 600;
+}
+.src-tag-custom { background: var(--elev-2); color: var(--ink-3); }
 .rr-meta { display: flex; gap: 12px; font-size: 12.5px; color: var(--ink-2); margin-top: 5px; min-width: 0; }
 .rr-latest { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46vw; }
 .rr-source { font-size: 11px; color: var(--ink-3); margin-top: 5px; }
@@ -914,15 +905,15 @@ body.ink-mode .dialog-mask {
 }
 
 /* 封面灰阶：层次干脆（灰阶换算时彩色封面互相难分辨 → 主动提对比） */
-body.ink-mode .bc-cover,
-body.ink-mode .cc-cover {
+body.ink-mode .bc-cover {
 	filter: grayscale(1) contrast(1.06) brightness(1.02);
 }
-body.ink-mode .bc-cover::after { display: none; }
 
 /* 按钮与进度：浓墨实色 */
 body.ink-mode .btn-primary { background: #2a2923; }
 body.ink-mode .progress-fill { background: #3c3b34; }
+/* 灰阶世界里危险操作不能和主操作同色：改用白底描边 */
+body.ink-mode .btn-danger { background: #f7f6f0; color: #1c1c1e; box-shadow: inset 0 0 0 1.5px #2a2923; }
 
 /* ============================================================
    宽屏 / 平板自适应
@@ -931,12 +922,6 @@ body.ink-mode .progress-fill { background: #3c3b34; }
 /* 平板及以上：页面内容限宽居中（更像一本书） */
 @media (min-width: 900px) {
 	.page { max-width: 880px; margin: 0 auto; width: 100%; }
-}
-
-/* 书籍网格自适应列数 */
-.book-grid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); }
-@media (min-width: 700px) {
-	.book-grid { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 22px 18px; }
 }
 
 /* 平板/宽屏：Tab 栏内容居中限宽 */
@@ -950,7 +935,123 @@ body.ink-mode .progress-fill { background: #3c3b34; }
 	.page { padding-left: 28px; padding-right: 28px; }
 	.page-title { font-size: 40px; }
 	.card { padding: 22px; }
-	.continue-card { padding: 18px; }
-	.cc-cover { width: 64px; height: 90px; }
-	.cc-title { font-size: 19px; }
+}
+
+/* ============================================================
+   墨水屏（E Ink）—— 纯黑白、无玻璃、无阴影
+   ------------------------------------------------------------
+   真机上面板只认灰阶：暖纸色会被驱动到中灰，对比度反而下降、
+   残影更明显。所以这里把整站压到纯白底 + 纯黑字，让面板自己
+   的 16 级灰阶去表现层次。
+   ============================================================ */
+body.eink {
+	--bg: #ffffff;
+	--bg-deep: #f0f0f0;
+	--elev: #ffffff;
+	--elev-2: #f0f0f0;
+	--ink: #000000;
+	--ink-2: #3a3a3a;
+	--ink-3: #6a6a6a;
+	--ink-4: #b8b8b8;
+	--line: rgba(0, 0, 0, 0.24);
+	--line-strong: rgba(0, 0, 0, 0.42);
+	--accent: #000000;
+	--accent-soft: rgba(0, 0, 0, 0.08);
+	--danger: #000000;
+	--sh-1: none;
+	--sh-2: none;
+	--sh-3: none;
+	background: #ffffff;
+}
+
+/* 玻璃/阴影/渐变在墨水屏上都要整块重绘，全部换成实色 + 描边 */
+body.eink .tabbar,
+body.eink .sheet,
+body.eink .toast,
+body.eink .sel-bar {
+	background: #ffffff;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+	box-shadow: none;
+	border: 1px solid rgba(0, 0, 0, 0.32);
+}
+body.eink .sheet-mask,
+body.eink .dialog-mask {
+	background: rgba(0, 0, 0, 0.28);
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+}
+body.eink .dialog { box-shadow: none; border: 1px solid rgba(0, 0, 0, 0.32); }
+body.eink .toast { color: #000000; }
+body.eink .bc-cover { filter: grayscale(1) contrast(1.02) brightness(1.1); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4); }
+body.eink .btn-danger { background: #ffffff; color: #000000; box-shadow: inset 0 0 0 1.5px #000000; }
+
+/* 阅读器：不跟随暖色主题，一律纯黑白 */
+body.eink .reader[data-theme] {
+	--rd-bg: #ffffff !important;
+	--rd-ink: #000000 !important;
+	--rd-ink-2: #444444 !important;
+	--rd-line: rgba(0, 0, 0, 0.3) !important;
+	--rd-bar: #ffffff !important;
+	--rd-refresh-bg: #ffffff !important;
+}
+body.eink .reader[data-theme] .reader-article,
+body.eink .reader[data-theme] .pv-content {
+	text-shadow: none !important;
+	letter-spacing: 0.01em;
+	-webkit-font-smoothing: auto;
+}
+body.eink .reader-frontlight,
+body.eink .reader[data-theme='ink'].paper-grain-on .reader-body::before { display: none !important; }
+body.eink .reader-top,
+body.eink .reader-bottom { backdrop-filter: none; -webkit-backdrop-filter: none; }
+body.eink .reader-veil { background: #ffffff; }
+body.eink .reader-progress-row .progress-fill { background: #000; opacity: 1; }
+
+/* ============================================================
+   动效分档 —— full（默认）/ lite（墨水屏）/ off
+   ------------------------------------------------------------
+   原则：只改亮度的淡入淡出在墨水屏上是安全的（局部刷新），
+   大面积位移和实时模糊才会拖影。所以 lite 只去掉后者。
+   ============================================================ */
+body.motion-lite .skeleton { animation: none; background: var(--elev-2); }
+body.motion-lite .tabbar,
+body.motion-lite .sheet,
+body.motion-lite .sel-bar,
+body.motion-lite .toast,
+body.motion-lite .reader-top,
+body.motion-lite .reader-bottom {
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+}
+/* 位移动画 → 纯淡入 */
+body.motion-lite .page-enter,
+body.motion-lite .stagger-item,
+body.motion-lite .result-row-enter,
+body.motion-lite .chapter-enter {
+	animation-name: fadeOnly;
+	animation-duration: 0.18s;
+}
+body.motion-lite .book-card:active .bc-cover { transform: none; }
+/* 阅读器进场只留淡入，不做 12px 上浮（整屏位移在墨水屏上会拖影） */
+body.motion-lite .reader.entering .reader-body { animation-name: fadeOnly; animation-duration: 0.18s; }
+/* 主题换色、工具栏滑出、惯性滚动都是整屏/整条重绘：精简档下直接切换 */
+body.motion-lite .reader { transition: none; }
+body.motion-lite .reader-top,
+body.motion-lite .reader-bottom { transition: none; }
+body.motion-lite .page { scroll-behavior: auto; }
+body.motion-lite .reader-body,
+body.motion-lite .pv-viewport { -webkit-overflow-scrolling: auto; }
+/* 返回书架时的高亮只用描边切换，不做阴影动画（墨水屏上会留残影） */
+body.motion-lite .book-card.just-read .bc-cover { animation: none; outline: 2px solid var(--accent); outline-offset: -2px; }
+body.motion-lite .sheet,
+body.motion-lite .sel-bar { transition-duration: 0.2s; }
+
+@keyframes fadeOnly { from { opacity: 0; } to { opacity: 1; } }
+
+body.motion-off *,
+body.motion-off *::before,
+body.motion-off *::after {
+	animation: none !important;
+	transition: none !important;
 }

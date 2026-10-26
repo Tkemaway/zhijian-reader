@@ -134,8 +134,23 @@
 	flex: 1;
 	height: 3px;
 	background: var(--rd-line);
+	position: relative;
+	touch-action: none;
+	cursor: pointer;
 }
+/* 3px 的条太细，上下各借 12px 当热区（视觉不变） */
+.reader-progress-row .progress-track::before {
+	content: '';
+	position: absolute;
+	left: 0; right: 0;
+	top: -12px; bottom: -12px;
+}
+.reader-progress-row .progress-track.scrubbing .progress-fill { transition: none; }
+.reader-progress-row .progress-track.scrubbing { height: 4px; }
 .reader-progress-row .progress-fill { background: var(--rd-ink); opacity: 0.7; }
+/* 换章加载中：只让页脚这一行变淡，不做整屏 loading */
+.reader-progress-row.is-loading { opacity: 0.55; }
+.reader-progress-row.is-loading .progress-fill { opacity: 0.35; }
 
 /* ---------- 正文 ---------- */
 .reader-body {
@@ -241,11 +256,7 @@
 	margin: 4px auto;
 }
 
-/* ---------- 中央点击区提示 ---------- */
-.reader-tap-zone { position: absolute; inset: 0; z-index: 5; }
-
 /* ---------- 目录面板 ---------- */
-.toc-sheet { max-height: 74vh; }
 .toc-list { margin: 0 -20px; }
 .toc-item {
 	display: flex;
@@ -269,6 +280,24 @@
 	flex-shrink: 0;
 }
 .toc-item .toc-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 「上次读到这里」分隔线 */
+.toc-lastread {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 12px 20px 8px;
+	font-size: 11.5px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	color: var(--accent);
+}
+.toc-lastread::after {
+	content: '';
+	flex: 1;
+	height: 0.5px;
+	background: currentColor;
+	opacity: 0.35;
+}
 .toc-item.cached .toc-name::after {
 	content: '已缓存';
 	font-size: 10px;
@@ -403,6 +432,8 @@
 	overscroll-behavior: contain;
 	touch-action: pan-x;
 }
+/* 墨水屏：不做原生横向跟手滚动（整屏连续重绘＝残影），改为松手翻页 */
+body.eink .pv-viewport { touch-action: none; }
 .pv-viewport::-webkit-scrollbar { display: none; }
 
 .pv-content {
@@ -471,6 +502,7 @@
 .reader.leaving {
 	opacity: 0 !important;
 	transition: opacity 0.22s var(--ease);
+	pointer-events: none;
 }
 
 /* 滚动模式：新章节淡入上浮 */
@@ -481,7 +513,6 @@
 }
 
 /* 分页模式：章节切换时内容轻微呼吸 */
-.pv-content { transition: opacity 0.25s var(--ease); }
 
 /* 平板/宽屏：阅读排版更从容 */
 @media (min-width: 900px) {
@@ -505,7 +536,6 @@
 }
 
 /* 墨水主题下淡化更"浓"一点（E-ink 刷新感更明显） */
-.reader[data-theme='ink'] .reader-veil { opacity: 0; }
 .reader[data-theme='ink'] .reader-veil.global-refresh { background: var(--rd-refresh-bg); }
 
 @media (max-width: 380px) {

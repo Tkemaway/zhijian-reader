@@ -1,5 +1,6 @@
 import sources from '../core/sources.js';
 import { fetchChapter } from '../core/engine.js';
+import { getComicChapterImages } from '../core/comic-cache.js';
 import { getToc, getCachedChapterIndices, saveChapters, updateBook, saveDownload } from './db.js';
 
 const active = new Map();
@@ -43,13 +44,26 @@ async function runDownload(book, task, target, onProgress) {
 			while (queue.length && !task.controller.signal.aborted) {
 				const chapter = queue.shift();
 				try {
-					const data = await fetchChapter(source, chapter.url, undefined, chapter.title, { signal: task.controller.signal });
-					if (task.controller.signal.aborted) break;
-					if (data.error || !data.paragraphs.length) job.failed.push(chapter.idx);
-					else {
-						await saveChapters(book.id, [{ ...data, idx: chapter.idx, url: chapter.url }]);
-						cached.add(chapter.idx);
-						job.completed++;
+					if (book.kind === 'comic') {
+						// 漫画一话 = 一组图片，下载后会由缓存模块自己写库
+						const images = await getComicChapterImages(book, source, chapter.idx, chapter, {
+							signal: task.controller.signal
+						});
+						if (task.controller.signal.aborted) break;
+						if (!images.length) job.failed.push(chapter.idx);
+						else {
+							cached.add(chapter.idx);
+							job.completed++;
+						}
+					} else {
+						const data = await fetchChapter(source, chapter.url, undefined, chapter.title, { signal: task.controller.signal });
+						if (task.controller.signal.aborted) break;
+						if (data.error || !data.paragraphs.length) job.failed.push(chapter.idx);
+						else {
+							await saveChapters(book.id, [{ ...data, idx: chapter.idx, url: chapter.url }]);
+							cached.add(chapter.idx);
+							job.completed++;
+						}
 					}
 				} catch (error) {
 					if (task.controller.signal.aborted) break;
@@ -59,7 +73,8 @@ async function runDownload(book, task, target, onProgress) {
 				report();
 			}
 		}
-		const results = await Promise.allSettled(Array.from({ length: Math.min(2, queue.length) }, () => worker()));
+		const workers = book.kind === 'comic' ? 1 : 2;
+		const results = await Promise.allSettled(Array.from({ length: Math.min(workers, queue.length) }, () => worker()));
 		const failure = results.find((result) => result.status === 'rejected');
 		if (failure) throw failure.reason;
 		job.status = task.controller.signal.aborted ? 'paused' : job.failed.length ? 'partial' : 'complete';

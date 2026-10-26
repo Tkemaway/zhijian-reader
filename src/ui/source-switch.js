@@ -123,8 +123,11 @@ function variantRow(v, close, app, getPosition) {
 
 /** 搜索同名书并列出其它书源的结果 */
 async function runSearch({ book, status, resultZone, close, getPosition, app }) {
-	const enabled = sources.filter((s) => s.enabled !== false && s.id !== book.sourceId);
-	if (!enabled.length) { status.textContent = '没有其它可用书源'; return; }
+	// 漫画只换漫画源、小说只换小说源：两类站点的目录/正文结构完全不同
+	const wantComic = book.kind === 'comic';
+	const enabled = sources.filter((s) => s.enabled !== false && s.id !== book.sourceId
+		&& (wantComic ? s.kind === 'comic' : s.kind !== 'comic'));
+	if (!enabled.length) { status.textContent = wantComic ? '没有其它可用的漫画源' : '没有其它可用书源'; return; }
 	const keyword = book.author ? `${book.title} ${book.author}` : book.title;
 	const target = { title: normalizeTitle(book.title), author: (book.author || '').replace(AUTHOR_PREFIX_RE, '').trim() };
 

@@ -123,9 +123,3 @@ export function executeDsl(dsl, initialContext) {
 
 	return result;
 }
-
-/** DSL 中是否包含某语言的步骤 */
-export function hasStep(dsl, lang) {
-	const { steps } = parseDsl(dsl || '');
-	return steps.some((s) => s.lang === lang);
-}

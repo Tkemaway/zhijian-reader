@@ -18,6 +18,8 @@ export const DEFAULT_SETTINGS = {
 	pinToBottom: false,
 	keepAwake: true,          // 阅读时保持亮屏
 	inkMode: false,           // 纸墨护眼模式（普通 Android 上的低刺激阅读主题）
+	einkMode: 'auto',         // 墨水屏优化：auto(自动识别) | on | off
+	motion: 'auto',           // 动效：auto(跟随屏幕) | full | lite | off
 	frontLight: 'mid',        // 前光色温：off(6500K) | low(~4500K) | mid(~3500K) | high(2700K 琥珀)
 	paperGrain: true          // 轻微纸面颗粒（普通屏幕上的材质提示）
 };
@@ -107,10 +109,6 @@ export function saveRemoteReadingMap(map) {
 	try {
 		localStorage.setItem(REMOTE_READING_KEY, JSON.stringify(map || {}));
 	} catch { /* ignore */ }
-}
-
-export function getRemoteReadingMap() {
-	return loadRemoteReading();
 }
 
 /** 本机原始每日时长（供同步上传；不含其他设备的部分） */

@@ -17,6 +17,24 @@ export function toast(msg, duration = 2200) {
 	toastTimer = setTimeout(() => el.classList.remove('show'), duration);
 }
 
+// ---------- 浮层栈（Esc / 返回键先关最上层） ----------
+const overlays = [];
+function pushOverlay(close) {
+	overlays.push(close);
+	return () => {
+		const i = overlays.indexOf(close);
+		if (i >= 0) overlays.splice(i, 1);
+	};
+}
+
+/** 关闭最上层浮层；没有浮层时返回 false（调用方继续处理，比如退出阅读器） */
+export function closeTopOverlay() {
+	const close = overlays[overlays.length - 1];
+	if (!close) return false;
+	close();
+	return true;
+}
+
 // ---------- Dialog ----------
 export function showDialog({ title, text, actions = [] }) {
 	return new Promise((resolve) => {
@@ -34,8 +52,8 @@ export function showDialog({ title, text, actions = [] }) {
 		const actionsEl = mask.querySelector('.dialog-actions');
 		actions.forEach((a, i) => {
 			const btn = document.createElement('button');
-			btn.className = `btn ${a.kind === 'primary' ? 'btn-primary' : a.kind === 'danger' ? 'btn-primary' : 'btn-soft'}`;
-			if (a.kind === 'danger') btn.style.background = 'var(--danger)';
+			const kind = a.kind === 'primary' ? 'btn-primary' : a.kind === 'danger' ? 'btn-danger' : 'btn-soft';
+			btn.className = `btn ${kind}`;
 			btn.textContent = a.label;
 			btn.onclick = () => close(a.value !== undefined ? a.value : i);
 			actionsEl.appendChild(btn);
@@ -43,14 +61,17 @@ export function showDialog({ title, text, actions = [] }) {
 
 		document.body.appendChild(mask);
 		requestAnimationFrame(() => mask.classList.add('show'));
+		let pop = () => {};
 
 		function close(value) {
+			pop();
 			mask.classList.remove('show');
 			setTimeout(() => {
 				mask.remove();
 				resolve(value);
 			}, 300);
 		}
+		pop = pushOverlay(() => close(-1));
 		mask.addEventListener('click', (e) => {
 			if (e.target === mask) close(-1);
 		});
@@ -68,6 +89,8 @@ export function showSheet({ title, build }) {
 
 	const body = document.createElement('div');
 	sheet.appendChild(body);
+	let pop = () => {};
+	let closed = false;
 	if (build) build(body, close);
 
 	document.body.appendChild(mask);
@@ -78,6 +101,10 @@ export function showSheet({ title, build }) {
 	});
 
 	function close() {
+		if (closed) return;
+		closed = true;
+		pop();
+		sheet.style.transform = '';
 		mask.classList.remove('show');
 		sheet.classList.remove('show');
 		setTimeout(() => {
@@ -85,53 +112,74 @@ export function showSheet({ title, build }) {
 			sheet.remove();
 		}, 420);
 	}
+	pop = pushOverlay(close);
 	mask.addEventListener('click', close);
+	bindSheetDrag(sheet, close);
 	return { close };
+}
+
+/** 按住顶部把手/标题下滑关闭（仅触摸设备，避免和桌面端预览的居中变换打架） */
+function bindSheetDrag(sheet, close) {
+	if (typeof window === 'undefined' || !window.matchMedia?.('(hover: none)').matches) return;
+	let startY = 0;
+	let startT = 0;
+	let dy = 0;
+	let dragging = false;
+
+	sheet.addEventListener('pointerdown', (e) => {
+		// 只从把手或标题起手，避免和内容里的滑杆/按钮抢手势
+		if (!e.target.closest('.sheet-handle, .sheet-title')) return;
+		dragging = true;
+		startY = e.clientY;
+		startT = Date.now();
+		dy = 0;
+		sheet.style.transition = 'none';
+		sheet.setPointerCapture?.(e.pointerId);
+	});
+	sheet.addEventListener('pointermove', (e) => {
+		if (!dragging) return;
+		dy = Math.max(0, e.clientY - startY);
+		sheet.style.transform = `translateY(${dy}px)`;
+	});
+	const end = () => {
+		if (!dragging) return;
+		dragging = false;
+		sheet.style.transition = '';
+		const speed = dy / Math.max(1, Date.now() - startT);
+		if (dy > 88 || (dy > 24 && speed > 0.55)) {
+			close();
+		} else {
+			sheet.style.transform = '';
+		}
+	};
+	sheet.addEventListener('pointerup', end);
+	sheet.addEventListener('pointercancel', end);
 }
 
 // ---------- 图标 ----------
 const ICONS = {
-	bookshelf: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
 	search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
 	user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/>',
 	back: '<path d="m15 5-7 7 7 7"/>',
 	chevronRight: '<path d="m9 5 7 7-7 7"/>',
 	list: '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>',
-	sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
 	font: '<path d="M4 20 10 4h1l6 16M6.5 14h9"/>',
 	theme: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18"/>',
 	download: '<path d="M12 3v12m0 0 5-5m-5 5-5-5"/><path d="M5 21h14"/>',
 	trash: '<path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/>',
 	clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
 	bookmark: '<path d="M6 3h12v18l-6-4.5L6 21z"/>',
-	moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
 	check: '<path d="m5 12 5 5 9-9"/>',
 	more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
 	library: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
 	folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-	refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v6h-6"/>',
-	sparkle: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/>'
+	columns: '<rect x="3" y="4" width="7.5" height="16" rx="1.5"/><rect x="13.5" y="4" width="7.5" height="16" rx="1.5"/>',
+	refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v6h-6"/>'
 };
 
 export function icon(name, size = 24) {
 	const path = ICONS[name] || '';
 	return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
-}
-
-// ---------- 小组件 ----------
-export function el(tag, className, html) {
-	const node = document.createElement(tag);
-	if (className) node.className = className;
-	if (html !== undefined) node.innerHTML = html;
-	return node;
-}
-
-export function fmtMinutes(sec) {
-	const m = Math.round(sec / 60);
-	if (m < 1) return '不足 1 分钟';
-	if (m < 60) return `${m} 分钟`;
-	const h = m / 60;
-	return h < 10 ? `${h.toFixed(1).replace(/\.0$/, '')} 小时` : `${Math.round(h)} 小时`;
 }
 
 /** 生成书籍封面的渐变（根据书名哈希） */

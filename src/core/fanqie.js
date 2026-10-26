@@ -11,36 +11,9 @@ import FANQIE_MAP from './fanqie-map.js';
 
 const BASE = 'https://fanqienovel.com';
 
-// ---------- 账号授权（可选）：用用户自己的登录态访问官方网页 ----------
-// 凭证仅存本机 localStorage，仅发往 fanqienovel.com；不经过任何第三方。
-const COOKIE_KEY = 'zj-fanqie-cookie';
-
-export function loadFanqieCookie() {
-	try {
-		return (typeof localStorage !== 'undefined' ? localStorage.getItem(COOKIE_KEY) : '') || '';
-	} catch {
-		return '';
-	}
-}
-
-export function saveFanqieCookie(cookie) {
-	try {
-		const v = String(cookie || '').trim();
-		if (v) localStorage.setItem(COOKIE_KEY, v);
-		else localStorage.removeItem(COOKIE_KEY);
-	} catch { /* ignore */ }
-}
-
-export function hasFanqieCookie() {
-	return !!loadFanqieCookie();
-}
-
-/** 番茄请求头（带授权凭证时附带 Cookie） */
+/** 番茄请求头 */
 export function fanqieHeaders(extra = {}) {
-	const headers = { Referer: 'https://fanqienovel.com/', ...extra };
-	const cookie = loadFanqieCookie();
-	if (cookie) headers.Cookie = cookie;
-	return headers;
+	return { Referer: 'https://fanqienovel.com/', ...extra };
 }
 
 /** 从 URL / 纯数字 ID 中提取番茄书籍 ID */
@@ -52,11 +25,6 @@ export function extractFanqieId(input) {
 	const m2 = s.match(/fanqienovel\.com\/reader\/(\d{15,20})/);
 	if (m2) return null; // 章节链接不含书籍 ID，无法直接入架
 	return null;
-}
-
-/** 是否像番茄的链接/ID（用于搜索框识别） */
-export function looksLikeFanqie(input) {
-	return extractFanqieId(input) !== null;
 }
 
 /** 解密：把 PUA 混淆字符替换为真实字符（映射表外的字符原样保留） */
@@ -132,17 +100,4 @@ export function parseFanqieChapter(html) {
 	// 官方试读判定：有标注字数且实际内容不足其 60%（试读一般只有几十到百来字）
 	const preview = statedChars > 500 && totalChars < statedChars * 0.6;
 	return { title: title.trim(), paragraphs, statedChars, preview };
-}
-
-/** 构造书对象（供入架流程使用） */
-export function buildFanqieBook(parsedToc, bookId) {
-	return {
-		title: parsedToc.title,
-		author: parsedToc.author,
-		sourceId: 'fanqie',
-		sourceName: '番茄小说（官方试读）',
-		bookUrl: `${BASE}/page/${bookId}`,
-		tocUrl: `${BASE}/page/${bookId}`,
-		totalChapters: parsedToc.chapters.length
-	};
 }

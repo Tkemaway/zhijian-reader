@@ -24,13 +24,3 @@ export async function keepAwake(on) {
 		lock = null;
 	}
 }
-
-/** 页面回到前台时重新申请（Wake Lock 在切后台时会被系统释放） */
-export function installWakeLockRecovery(getDesired) {
-	if (typeof document === 'undefined') return;
-	document.addEventListener('visibilitychange', () => {
-		if (document.visibilityState === 'visible' && getDesired()) {
-			keepAwake(true);
-		}
-	});
-}

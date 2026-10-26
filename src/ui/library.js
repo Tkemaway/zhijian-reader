@@ -1,4 +1,4 @@
-import { getBooksDeduped, getProgress, deleteBook, getDownload, addBook, updateBook, saveToc, saveChapters } from '../store/db.js';
+import { getBooksDeduped, getProgress, deleteBook, getDownload, addBook, saveToc } from '../store/db.js';
 import { downloadBook, pauseDownload, isDownloading } from '../store/downloads.js';
 import { refreshBookToc } from '../store/toc-refresh.js';
 import { bookTitleAuthorKey } from '../store/book-identity.js';
@@ -6,7 +6,7 @@ import { cleanMetaText } from '../core/text-clean.js';
 import { getLimitStateWithExtra, fmtDuration, getTodaySeconds } from '../store/stats.js';
 import { icon, toast, showDialog, showSheet, coverGradient } from './kit.js';
 import { openSourceSwitcher } from './source-switch.js';
-import { rememberImportedFile, uploadLocalBookFile, isFileSyncEnabled } from '../store/book-files.js';
+import { rememberImportedFile, uploadLocalBookFile, isFileSyncEnabled, saveParsedChapters, comicPageCount } from '../store/book-files.js';
 import { kickAutoSync, runAutoSync } from '../store/auto-sync.js';
 import { isSyncEnabled } from '../store/sync.js';
 import { parseBookFile } from '../core/importer.js';
@@ -51,10 +51,10 @@ export async function renderLibrary(container, app) {
 		</div>
 	`;
 
-	// 导入本地书（TXT / EPUB）
+	// 导入本地书（TXT / EPUB / 漫画 CBZ）
 	const fileInput = document.createElement('input');
 	fileInput.type = 'file';
-	fileInput.accept = '.txt,.epub,.text';
+	fileInput.accept = '.txt,.text,.epub,.cbz';
 	fileInput.style.display = 'none';
 	container.appendChild(fileInput);
 	container.querySelector('#import-btn').addEventListener('click', () => fileInput.click());
@@ -98,6 +98,8 @@ export async function renderLibrary(container, app) {
 	} catch (e) {
 		console.error(e);
 	}
+	// 加载期间用户已经切走：别再往旧页面里写
+	if (container.dataset.route !== 'library') return;
 	const groups = new Map();
 	for (const b of books) {
 		const k = groupKeyOf(b);
@@ -105,6 +107,10 @@ export async function renderLibrary(container, app) {
 		groups.get(k).push(b);
 	}
 	const cards = [...groups.values()].map(pickActiveVariant);
+
+	// 有还没上传的本地书 → 同步按钮上亮一个小点
+	const pendingUpload = books.filter((b) => b.sourceId === 'local' && !b.fileUploadedAt).length;
+	if (pendingUpload && isFileSyncEnabled()) container.querySelector('#sync-btn')?.classList.add('has-pending');
 
 	const zone = container.querySelector('#books-zone');
 	const resumeZone = container.querySelector('#continue-zone');
@@ -128,7 +134,6 @@ export async function renderLibrary(container, app) {
 	let filter = 'all';
 	let sort = 'recent';
 	const selState = { active: false };
-	const selIds = () => [...zone.querySelectorAll('.book-card.selected')].map((c) => c.dataset.bookId);
 
 	const applyFilter = (b) => {
 		if (filter === 'reading') return (b.readChapters || 0) > 0 && (b.readChapters || 0) < (b.totalChapters || 0);
@@ -216,7 +221,7 @@ export async function renderLibrary(container, app) {
  * 书架多选：点「管理」进入；按下并滑动可以连续选中/取消。
  * 未进入多选时保持原交互：点开书、长按菜单。
  */
-function bindSelection(container, grid, selState, app, onModeChange) {
+function bindSelection(container, grid, selState, app) {
 	const selBar = container.querySelector('#sel-bar');
 	const selCount = container.querySelector('#sel-count');
 	const manageBtn = container.querySelector('#manage-btn');
@@ -234,7 +239,6 @@ function bindSelection(container, grid, selState, app, onModeChange) {
 		selState.active = true;
 		selBar.classList.add('show');
 		manageBtn.textContent = '取消';
-		onModeChange?.(true);
 	};
 	const exit = () => {
 		selState.active = false;
@@ -243,7 +247,6 @@ function bindSelection(container, grid, selState, app, onModeChange) {
 		manageBtn.textContent = '管理';
 		grid.querySelectorAll('.book-card.selected').forEach((c) => c.classList.remove('selected'));
 		update();
-		onModeChange?.(false);
 	};
 
 	manageBtn.addEventListener('click', () => (selState.active ? exit() : enter()));
@@ -264,7 +267,7 @@ function bindSelection(container, grid, selState, app, onModeChange) {
 		});
 		if (ok !== 1) return;
 		for (const id of ids) {
-			try { await deleteBook(id); } catch { /* 跳过失败项 */ }
+			try { await deleteBook(id, { releaseFile: true }); } catch { /* 跳过失败项 */ }
 		}
 		toast(`已删除 ${ids.length} 本`, 1800);
 		exit();
@@ -324,7 +327,8 @@ function renderStatus(zone, app) {
  * 两本书显示成两张卡片，用户会以为「书架复制了一份」。
  */
 function groupKeyOf(book) {
-	return bookTitleAuthorKey(book);
+	// 漫画与同名小说不能合成一张卡：阅读器和内容完全不同
+	return `${book.kind === 'comic' ? 'comic' : 'text'}|${bookTitleAuthorKey(book)}`;
 }
 
 /** 组内当前书源：用户显式切过的（active）优先，其次本机已缓存（离线可读）的，
@@ -356,17 +360,19 @@ export function bookCard(book, app, variants = null, selState = null) {
 	const title = cleanMetaText(book.title);
 	const author = cleanMetaText(book.author || '');
 	const bg = book.coverStyle || 'linear-gradient(145deg,#4a4a4c,#242426)';
+	el.dataset.total = String(total);
 
 	el.innerHTML = `
 		<div class="bc-cover" style="background:${bg}">
 			<span class="bc-title">${escapeHtml(title)}</span>
 			<span class="bc-author">${escapeHtml(author)}</span>
+			${book.kind === 'comic' ? '<span class="bc-kind">漫画</span>' : ''}
 			${multi ? `<span class="bc-badge">${variants.length}源</span>` : ''}
 			<span class="bc-check">${icon('check', 14)}</span>
 		</div>
 		<div class="bc-line"><i style="width:${pct}%"></i></div>
 		<div class="bc-name">${escapeHtml(title)}</div>
-		<div class="bc-byline">${escapeHtml(author || ' ')}</div>`;
+		<div class="bc-byline">${escapeHtml(book.kind === 'comic' ? `${author || '漫画'} · ${total} 话` : author || ' ')}</div>`;
 	if (pct > 0 && pct < 100) el.classList.add('is-reading');
 
 	let longPress = null;
@@ -486,7 +492,7 @@ export function showBookActions(book, app, variants = null) {
 				});
 				if (ok === 1) {
 					await pauseDownload(book.id);
-					await deleteBook(book.id);
+					await deleteBook(book.id, { releaseFile: true });
 					toast('已删除');
 					app.refresh();
 				}
@@ -526,6 +532,8 @@ export async function importLocalBook(file, app) {
 		if (!parsed.chapters.length) throw new Error('没有解析到章节');
 
 		const total = parsed.chapters.length;
+		const isComic = parsed.kind === 'comic';
+		const pages = isComic ? comicPageCount(parsed) : 0;
 		const bookId = `imp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 		const book = {
 			id: bookId,
@@ -534,9 +542,11 @@ export async function importLocalBook(file, app) {
 			coverStyle: coverGradient(parsed.title || name),
 			sourceId: 'local',
 			sourceName: '本地导入',
+			kind: isComic ? 'comic' : '',
 			bookUrl: '',
 			tocUrl: '',
 			totalChapters: total,
+			totalPages: pages,
 			cachedChapters: total,
 			addedAt: Date.now(),
 			lastReadAt: 0
@@ -547,20 +557,11 @@ export async function importLocalBook(file, app) {
 		const realId = saved?.id || bookId;
 		await saveToc(realId, parsed.chapters.map((c) => ({ title: c.title, url: '' })));
 
-		// 全量写入章节（分批，避免单事务过大）
-		const list = parsed.chapters.map((c, idx) => ({
-			idx,
-			title: c.title,
-			paragraphs: c.paragraphs,
-			url: '',
-			totalChars: c.paragraphs.join('').length
-		}));
-		const BATCH = 80;
-		for (let i = 0; i < list.length; i += BATCH) {
-			await saveChapters(realId, list.slice(i, i + BATCH));
-		}
+		// 全量写入章节（漫画单条记录很大，内部按更小的批次提交）
+		await saveParsedChapters(realId, parsed);
 
-		if (saved?.__merged) toast(`《${saved.title || book.title}》已在书架，已更新为 ${total} 章`, 2600);
+		if (saved?.__merged) toast(`《${saved.title || book.title}》已在书架，已更新为 ${isComic ? `${total} 话` : `${total} 章`}`, 2600);
+		else if (isComic) toast(`《${book.title}》已导入 · ${total} 话 · ${pages} 页`, 2800);
 		else toast(`《${book.title}》已导入 · ${total} 章`, 2600);
 
 		// 记住原始文件（跨设备云同步用）；已开启文件同步时后台自动上传

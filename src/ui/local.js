@@ -11,12 +11,16 @@ import { bookCard, importLocalBook } from './library.js';
 import { toast, showSheet } from './kit.js';
 
 export async function renderLocal(container, app) {
+	// 先落骨架，避免切页时白屏一帧
+	container.innerHTML = `<div class="shelf-title" style="font-size:28px;line-height:34px">本地</div>
+		<div class="skeleton" style="height:200px;margin-top:16px"></div>`;
 	let books = [];
 	try {
 		books = (await getBooks()).filter((b) => b.sourceId === 'local');
 	} catch (e) {
 		console.error(e);
 	}
+	if (container.dataset.route !== 'local') return;
 	books.sort((a, b) => (b.lastReadAt || b.addedAt || 0) - (a.lastReadAt || a.addedAt || 0));
 
 	const synced = books.filter((b) => b.fileUploadedAt).length;
@@ -36,7 +40,7 @@ export async function renderLocal(container, app) {
 		</header>
 		<div class="local-summary">${books.length
 			? `${books.length} 本 · ${size} · ${cloudReady ? `云端已同步 ${synced} 本` : '未配置网盘同步'}`
-			: '导入的 EPUB / TXT 会出现在这里'}</div>
+			: '导入的 EPUB / TXT / 漫画 CBZ 会出现在这里'}</div>
 		<div id="local-books"></div>
 	`;
 
@@ -46,7 +50,7 @@ export async function renderLocal(container, app) {
 			<div class="empty-state">
 				<div class="glyph">书</div>
 				<h3>还没有本地书</h3>
-				<p>导入手机里的 EPUB / TXT<br/>开启网盘同步后，平板和手机会自动互通</p>
+				<p>导入手机里的 EPUB / TXT / 漫画 CBZ<br/>开启网盘同步后，平板和手机会自动互通</p>
 			</div>`;
 	} else {
 		const grid = document.createElement('div');
@@ -58,7 +62,7 @@ export async function renderLocal(container, app) {
 	// 导入文件
 	const input = document.createElement('input');
 	input.type = 'file';
-	input.accept = '.txt,.epub,.text';
+	input.accept = '.txt,.text,.epub,.cbz';
 	input.style.display = 'none';
 	container.appendChild(input);
 	container.querySelector('#local-import').addEventListener('click', () => input.click());
@@ -107,10 +111,10 @@ export async function renderLocal(container, app) {
 						if (!res.bytes?.length) throw new Error('下载到的文件为空');
 						// 文件名：优先取地址里的文件名，其次按类型补扩展名
 						const base = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
-						let name = base && /\.(epub|txt)$/i.test(base) ? base : '';
+						let name = base && /\.(epub|txt|cbz)$/i.test(base) ? base : '';
 						if (!name) {
 							const ct = String(res.contentType || '').toLowerCase();
-							name = `下载.${ct.includes('epub') ? 'epub' : 'txt'}`;
+							name = `下载.${ct.includes('epub') ? 'epub' : ct.includes('zip') ? 'cbz' : 'txt'}`;
 						}
 						status.textContent = `已下载 ${(res.bytes.length / 1024 / 1024).toFixed(1)} MB，正在解析…`;
 						await importBookFromBytes(res.bytes, name);

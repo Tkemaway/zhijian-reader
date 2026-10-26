@@ -124,18 +124,6 @@ export function bookTitleAuthorKey(book) {
 	return normalizeTitle(book?.title) + KEY_SEP + normalizeAuthor(book?.author);
 }
 
-/** 按「书名+作者」把书架记录聚类（同一本书的多个书源归为一组） */
-export function groupBooksByIdentity(books) {
-	const groups = new Map();
-	for (const b of books || []) {
-		if (!b) continue;
-		const k = bookTitleAuthorKey(b);
-		if (!groups.has(k)) groups.set(k, []);
-		groups.get(k).push(b);
-	}
-	return groups;
-}
-
 /**
  * 两位作者的署名是否「兼容」（可视为同一人）。
  * 只有以下情况才算兼容，避免把「同名不同作者」的两本书误判成一本：

@@ -247,6 +247,8 @@ async function buildLocalSnapshot() {
 		author: b.author || '',
 		sourceId: b.sourceId || '',
 		sourceName: b.sourceName || '',
+		// 漫画书必须跟着快照走，否则对端会当成文字书打开
+		kind: b.kind === 'comic' ? 'comic' : '',
 		bookUrl: b.bookUrl || '',
 		tocUrl: b.tocUrl || '',
 		coverStyle: b.coverStyle || '',
@@ -291,6 +293,7 @@ function mergeBookEntry(a, b) {
 		author: a.author || b.author || '',
 		sourceId: a.sourceId || b.sourceId || '',
 		sourceName: a.sourceName || b.sourceName || '',
+		kind: a.kind === 'comic' || b.kind === 'comic' ? 'comic' : '',
 		bookUrl: a.bookUrl || b.bookUrl || '',
 		tocUrl: a.tocUrl || b.tocUrl || '',
 		coverStyle: a.coverStyle || b.coverStyle || '',
@@ -588,6 +591,8 @@ async function applySnapshotToLocal(merged, local) {
 			// 本地作者为空而远端有 → 补齐（补齐后键更稳定，后续同步不会反复退化匹配）
 			if (!exist.author && remoteBook.author) patch.author = remoteBook.author;
 			if (!exist.sourceName && remoteBook.sourceName) patch.sourceName = remoteBook.sourceName;
+			// 旧记录没有 kind（漫画功能上线前同步过来的）→ 按远端补齐
+			if (!exist.kind && remoteBook.kind) patch.kind = remoteBook.kind;
 			// 换源选择：对端切换得更晚 → 跟随（保证两台设备读同一个来源）
 			if ((Number(remoteBook.activeAt) || 0) > (Number(exist.activeAt) || 0)) {
 				patch.active = remoteBook.active ? 1 : 0;
@@ -640,6 +645,7 @@ async function applySnapshotToLocal(merged, local) {
 			coverStyle: remoteBook.coverStyle || '',
 			sourceId: remoteBook.sourceId || '',
 			sourceName: remoteBook.sourceName || '',
+			kind: remoteBook.kind === 'comic' ? 'comic' : '',
 			bookUrl: remoteBook.bookUrl || '',
 			tocUrl: remoteBook.tocUrl || '',
 			totalChapters: remoteBook.totalChapters || 0,
@@ -914,11 +920,6 @@ let _pushTimer = null;
 /** 仅供测试：暴露快照合并逻辑（Node 环境无 IndexedDB，跑不了完整同步流程） */
 export function _mergeSnapshotsForTest(local, remote) {
 	return mergeSnapshots(local, remote);
-}
-
-/** 标记"本地有新阅读进度待同步" */
-export function markReadingDirty() {
-	_dirty = true;
 }
 
 function flushSync() {

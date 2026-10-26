@@ -165,15 +165,6 @@ export function extractWithType(el, query, type = 'text') {
 	return executeDsl(query, raw);
 }
 
-/** 已有元素直接提取 + DSL 处理 */
-export function extractContent(el, query, type = 'href') {
-	if (!el) return '';
-	let value = '';
-	if (type === 'href' || type === 'src') value = absUrl(el, type);
-	else value = nodeText(el);
-	return query ? executeDsl(query, value) : value;
-}
-
 /** 解析 HTML（优先使用注入的 DOMParser，浏览器用原生） */
 export function createParser(DOMParserImpl) {
 	const DP = DOMParserImpl || (typeof DOMParser !== 'undefined' ? DOMParser : null);

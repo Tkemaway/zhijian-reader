@@ -155,8 +155,18 @@ export async function updateBook(id, patch) {
 	});
 }
 
-export async function deleteBook(id) {
+/**
+ * 删除书籍（书 + 目录 + 章节 + 进度 + 书签 + 缓存任务）。
+ * @param {string} id
+ * @param {{releaseFile?: boolean}} [opts] releaseFile：用户主动删书时一并清理原始文件
+ *   （合并重复记录等内部搬迁不要传，避免把仍被引用的文件删掉）
+ */
+export async function deleteBook(id, { releaseFile = false } = {}) {
 	const db = await openDb();
+	// 记下这本书引用的原始文件哈希：删完后若已无其他记录引用，连同文件一起清掉，
+	// 否则 IndexedDB 的 files 存储会一直留着这些 EPUB/TXT 字节（只增不减）。
+	const doomed = releaseFile ? await reqValue(db.transaction('books').objectStore('books').get(id)) : null;
+	const fileHash = doomed?.fileHash || '';
 	// 删除书 + 目录 + 全部章节 + 进度
 	return new Promise((resolve, reject) => {
 		const t = db.transaction(['books', 'toc', 'chapters', 'progress', 'downloads', 'bookmarks'], 'readwrite');
@@ -176,9 +186,19 @@ export async function deleteBook(id) {
 				cursor.continue();
 			}
 		};
-		t.oncomplete = () => resolve(true);
+		t.oncomplete = () => {
+			if (fileHash) releaseFileIfOrphaned(db, fileHash).catch(() => {});
+			resolve(true);
+		};
 		t.onerror = () => reject(t.error);
 	});
+}
+
+/** 没有任何书记录再引用该哈希时，删除原始文件（跨设备同步仍可重新下载） */
+async function releaseFileIfOrphaned(db, hash) {
+	const books = await reqValue(db.transaction('books').objectStore('books').getAll());
+	if (books.some((b) => b && b.fileHash === hash)) return;
+	await deleteBookFile(hash);
 }
 
 // ---------- 目录 ----------
@@ -201,33 +221,22 @@ export async function getToc(bookId) {
 
 // ---------- 章节内容 ----------
 
-export async function saveChapter(bookId, idx, chapter) {
-	const db = await openDb();
-	return new Promise((resolve, reject) => {
-		const t = db.transaction('chapters', 'readwrite');
-		t.objectStore('chapters').put({
-			bookId,
-			idx,
-			title: chapter.title,
-			paragraphs: chapter.paragraphs,
-			cachedAt: Date.now()
-		});
-		t.oncomplete = () => resolve(true);
-		t.onerror = () => reject(t.error);
-	});
-}
-
 export async function saveChapters(bookId, chapterList) {
 	const db = await openDb();
 	return new Promise((resolve, reject) => {
 		const t = db.transaction('chapters', 'readwrite');
 		const store = t.objectStore('chapters');
 		for (const ch of chapterList) {
+			const images = ch.images?.length ? ch.images : undefined;
 			store.put({
 				bookId,
 				idx: ch.idx,
 				title: ch.title,
 				paragraphs: ch.paragraphs,
+				// 漫画章节没有文字，正文是图片字节（本地导入 / 已缓存的在线章节）
+				images,
+				// 在线漫画尚未下载的图片地址（阅读时按需下载并回写 images）
+				imageUrls: !images && ch.imageUrls?.length ? ch.imageUrls : undefined,
 				totalChars: ch.totalChars || (ch.paragraphs || []).join('').length,
 				url: ch.url || '',
 				cachedAt: Date.now()
@@ -366,10 +375,6 @@ export async function getBookFile(hash) {
 	if (!hash) return null;
 	const db = await openDb();
 	return reqValue(db.transaction('files').objectStore('files').get(hash));
-}
-
-export async function hasBookFile(hash) {
-	return !!(await getBookFile(hash));
 }
 
 export async function deleteBookFile(hash) {
