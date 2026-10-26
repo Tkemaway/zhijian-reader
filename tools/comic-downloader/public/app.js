@@ -173,36 +173,38 @@ function renderSourceInfo() {
 	const box = $('#source-info');
 	clear(box);
 	box.classList.remove('hidden');
-	if (!state.source) return;
+	if (!state.sources.length) return;
+
+	const comicCount = state.sources.filter((s) => s.kind === 'comic').length;
+	const textCount = state.sources.length - comicCount;
+	if (state.sources.length === 1) {
+		box.appendChild(el('div', 'name', state.source.name));
+	} else {
+		box.appendChild(el('div', 'name', `${state.sources.length} 个书源已加载`));
+	}
+	const meta = el('div', 'meta',
+		state.sources.length === 1
+			? `${state.source.kind === 'comic' ? '漫画源' : '小说源'} · ${state.source.url}`
+			: `漫画 ${comicCount} 个${textCount ? ` · 小说 ${textCount} 个` : ''} · 搜索时会同时查询${comicCount ? '全部漫画源' : '全部源'}`);
+	box.appendChild(meta);
 
 	if (state.sources.length > 1) {
-		const select = el('select');
-		state.sources.forEach((s, i) => {
-			const opt = el('option', null, `${s.name}${s.kind === 'comic' ? ' · 漫画' : ''}`);
-			opt.value = String(i);
-			select.appendChild(opt);
-		});
-		select.value = String(state.sources.indexOf(state.source));
-		select.addEventListener('change', () => {
-			state.source = state.sources[Number(select.value)];
-			renderSourceInfo();
-			clearResults();
-		});
-		box.appendChild(select);
-	} else {
-		box.appendChild(el('div', 'name', state.source.name));
+		const names = state.sources.map((s) => s.name).filter(Boolean);
+		const shown = names.slice(0, 6).join('、');
+		box.appendChild(el('div', 'meta', shown + (names.length > 6 ? ` 等 ${names.length} 个` : '')));
 	}
 
-	const meta = el('div', 'meta', `${state.source.kind === 'comic' ? '漫画源' : '小说源'} · ${state.source.url}`);
-	box.appendChild(meta);
-	if (state.source.scripted) {
-		box.appendChild(el('div', 'warn', '含脚本/登录验证：搜索或目录可能不完整（App 不执行完整 Legado 脚本）'));
+	const scripted = state.sources.filter((s) => s.scripted).length;
+	if (scripted) {
+		box.appendChild(el('div', 'warn', `${scripted} 个源含脚本/登录验证：搜索或目录可能不完整`));
 	}
 }
 
 function clearResults() {
 	state.results = [];
 	state.selectedResult = null;
+	state.searchTaskId = null;
+	if (state.searchTimer) { clearTimeout(state.searchTimer); state.searchTimer = null; }
 	$('#results').innerHTML = '';
 	$('#search-status').textContent = '';
 	state.book = null;
@@ -210,26 +212,28 @@ function clearResults() {
 }
 
 async function search() {
-	if (!state.source) { toast('先加载书源', 'error'); return; }
+	if (!state.sources.length) { toast('先加载书源', 'error'); return; }
 	const keyword = $('#keyword').value.trim();
 	if (!keyword) { toast('请输入书名', 'error'); return; }
+
+	const comics = state.sources.filter((s) => s.kind === 'comic');
+	const pool = comics.length ? comics : state.sources;
 	const btn = $('#search');
 	setBusy(btn, true, '搜索中…');
-	$('#search-status').textContent = '正在搜索…';
-	$('#search-status').classList.remove('error');
+	state.searchTaskId = null;
+	if (state.searchTimer) { clearTimeout(state.searchTimer); state.searchTimer = null; }
+	state.results = [];
+	state.book = null;
+	state.scan = null;
 	$('#results').innerHTML = '';
+	$('#search-status').classList.remove('error');
+	$('#search-status').textContent = `正在搜索 ${pool.length} 个源…`;
+	renderSelection();
+
 	try {
-		const data = await api('/api/search', { source: state.source.source, keyword });
-		state.results = data.results || [];
-		if (data.error) {
-			$('#search-status').textContent = `搜索出错：${data.error}`;
-			$('#search-status').classList.add('error');
-		} else if (!state.results.length) {
-			$('#search-status').textContent = '没有搜到结果，换个关键词或换一个书源试试';
-		} else {
-			$('#search-status').textContent = `找到 ${state.results.length} 条结果`;
-		}
-		renderResults();
+		const data = await api('/api/search-all', { sources: pool.map((s) => s.source), keyword });
+		state.searchTaskId = data.searchId;
+		pollSearch();
 	} catch (e) {
 		$('#search-status').textContent = `搜索失败：${e.message}`;
 		$('#search-status').classList.add('error');
@@ -238,41 +242,81 @@ async function search() {
 	}
 }
 
-function renderResults() {
-	const box = $('#results');
-	clear(box);
-	state.results.forEach((r, i) => {
-		const btn = el('button', 'result');
-		btn.type = 'button';
-
-		const cover = el('div', 'cover');
-		if (r.coverUrl) {
-			const img = document.createElement('img');
-			img.loading = 'lazy';
-			img.src = `/api/proxy?url=${encodeURIComponent(r.coverUrl)}&referer=${encodeURIComponent(r.bookUrl || '')}`;
-			img.onerror = () => { img.remove(); cover.textContent = (r.bookName || '?').slice(0, 1); };
-			cover.appendChild(img);
+async function pollSearch() {
+	const id = state.searchTaskId;
+	if (!id) return;
+	try {
+		const data = await api(`/api/search-all/${id}`);
+		if (state.searchTaskId !== id) return; // 已经开了新一轮搜索
+		state.results = data.results || [];
+		renderResults(data);
+		const okSources = (data.stats || []).filter((s) => s.count > 0).length;
+		if (data.status === 'running') {
+			$('#search-status').textContent = `正在搜索 ${data.total} 个源…（已响应 ${data.done}/${data.total}）· 已有 ${state.results.length} 条`;
+			state.searchTimer = setTimeout(pollSearch, 350);
 		} else {
-			cover.textContent = (r.bookName || '?').slice(0, 1);
-			cover.style.background = gradientFor(r.bookName);
+			$('#search-status').textContent = `共 ${state.results.length} 条结果 · ${okSources}/${data.total} 个源有结果`;
 		}
+	} catch (e) {
+		$('#search-status').textContent = `搜索中断：${e.message}`;
+		$('#search-status').classList.add('error');
+	}
+}
 
-		const info = el('div', 'info');
-		info.appendChild(el('div', 'title', r.bookName || '未命名'));
-		const by = [r.author, r.latestChapter].filter(Boolean).join(' · ');
-		info.appendChild(el('div', 'byline', by || state.source?.name || ''));
-		btn.append(cover, info, el('div', 'go', '›'));
+function renderResults(task = null) {
+	const box = $('#results');
+	const keepScroll = box.scrollTop;
+	clear(box);
 
-		btn.addEventListener('click', () => {
-			state.selectedResult = r;
-			document.querySelectorAll('.result').forEach((x) => x.classList.toggle('active', x === btn));
-			loadToc(r);
+	if (!state.results.length) {
+		if (task?.status === 'done') {
+			box.appendChild(el('p', 'search-empty', '没有搜到结果，换个关键词或换一批书源试试'));
+		}
+	} else {
+		const head = el('div', 'result-head');
+		['站点', '标题', '作者', '最新章节'].forEach((t) => head.appendChild(el('span', null, t)));
+		box.appendChild(head);
+
+		state.results.forEach((r) => {
+			const row = el('button', 'result');
+			row.type = 'button';
+			row.append(
+				el('span', 'site', r.sourceName || ''),
+				el('span', 'title', r.bookName || '未命名'),
+				el('span', 'author', (r.author || '').replace(/^作者[:：]\s*/, '')),
+				el('span', 'latest', r.latestChapter || '')
+			);
+			row.addEventListener('click', () => {
+				document.querySelectorAll('.result').forEach((x) => x.classList.toggle('active', x === row));
+				loadToc(r);
+			});
+			box.appendChild(row);
 		});
-		box.appendChild(btn);
-	});
+	}
+
+	box.scrollTop = keepScroll;
+
+	// 搜完列出没有结果的源，别让人以为「全都搜过了」
+	if (task?.status === 'done') {
+		const failed = (task.stats || []).filter((s) => !s.count);
+		if (failed.length) {
+			const foot = el('div', 'search-failed');
+			foot.appendChild(el('b', null, `未找到 / 失败（${failed.length}）：`));
+			const text = failed.map((s) => `${s.name}${s.error ? `（${s.error}）` : ''}`).join('、');
+			foot.appendChild(document.createTextNode(text));
+			box.appendChild(foot);
+		}
+	}
 }
 
 async function loadToc(result) {
+	const wrapper = state.sources.find((s) => s.id === result.sourceId)
+		|| state.sources.find((s) => s.source?.id === result.sourceId)
+		|| state.sources.find((s) => s.name === result.sourceName)
+		|| state.source;
+	if (!wrapper) { toast('这条结果对应的书源已不在列表里', 'error'); return; }
+	const source = wrapper.source || wrapper;
+
 	$('#search-status').textContent = `正在获取《${result.bookName}》的目录…`;
 	$('#search-status').classList.remove('error');
 	$('#start').disabled = true;
@@ -280,7 +324,7 @@ async function loadToc(result) {
 	state.scan = null;
 	renderSelection();
 	try {
-		const data = await api('/api/toc', { source: state.source.source, bookUrl: result.bookUrl });
+		const data = await api('/api/toc', { source, bookUrl: result.bookUrl });
 		if (!data.chapters?.length) throw new Error('没有获取到目录（书源规则可能不匹配）');
 		state.scan = null;
 		state.book = {
@@ -288,7 +332,8 @@ async function loadToc(result) {
 			author: result.author || data.bookAuthor || '',
 			chapters: data.chapters,
 			bookUrl: result.bookUrl,
-			source: state.source.source
+			source,
+			sourceName: result.sourceName || wrapper.name || ''
 		};
 		renderSelection();
 		$('#search-status').textContent = `《${state.book.title}》共 ${state.book.chapters.length} 话`;
@@ -401,7 +446,8 @@ function renderSelection() {
 
 function renderBookSelection(box, book) {
 	box.appendChild(el('div', 'book-title', book.title));
-	box.appendChild(el('div', 'book-meta', `${book.author || '未知作者'} · 共 ${book.chapters.length} 话`));
+	box.appendChild(el('div', 'book-meta',
+		[book.author || '未知作者', book.sourceName, `共 ${book.chapters.length} 话`].filter(Boolean).join(' · ')));
 
 	const total = book.chapters.length;
 	const end = defaultEnd(total);

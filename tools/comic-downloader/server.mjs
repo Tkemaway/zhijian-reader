@@ -30,6 +30,7 @@ const IMAGE_CONCURRENCY = 5;
 const MAX_JOBS_KEPT = 30;
 
 const jobs = new Map();
+const searches = new Map();
 const queue = [];
 let running = false;
 const allowedRoots = new Set([path.resolve(DEFAULT_OUTPUT)]);
@@ -198,6 +199,82 @@ async function downloadChapterImages(job, chapter, dir, referer, signal) {
 	await Promise.all(Array.from({ length: Math.min(IMAGE_CONCURRENCY, urls.length) }, worker));
 	job.pages += result.ok + result.skipped;
 	return result;
+}
+
+// ------------------------------------------------------------
+//  多源聚合搜索
+// ------------------------------------------------------------
+
+const SEARCH_CONCURRENCY = 5;
+const SEARCH_TIMEOUT = 12000;
+
+function startSearch(sources, keyword) {
+	const task = {
+		id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+		keyword,
+		total: sources.length,
+		done: 0,
+		status: 'running',
+		results: [],
+		stats: [],
+		startedAt: Date.now(),
+		finishedAt: 0
+	};
+	searches.set(task.id, task);
+	// 只保留最近 10 次搜索
+	if (searches.size > 10) {
+		const oldest = [...searches.values()].sort((a, b) => a.startedAt - b.startedAt)[0];
+		if (oldest && oldest.status !== 'running') searches.delete(oldest.id);
+	}
+	runSearchTask(task, sources, keyword);
+	return task;
+}
+
+async function searchOne(source, keyword) {
+	let timer;
+	const timeout = new Promise((resolve) => {
+		timer = setTimeout(() => resolve({ results: [], error: '超时', timedOut: true }), SEARCH_TIMEOUT);
+	});
+	try {
+		const r = await Promise.race([searchSource(source, keyword, DOMParser), timeout]);
+		return r || { results: [], error: '' };
+	} catch (e) {
+		return { results: [], error: e.message || String(e) };
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+async function runSearchTask(task, sources, keyword) {
+	const queue = [...sources];
+	const worker = async () => {
+		for (;;) {
+			const source = queue.shift();
+			if (!source) return;
+			const started = Date.now();
+			const r = await searchOne(source, keyword);
+			const list = (r.results || []).map((item) => ({
+				...item,
+				sourceId: item.sourceId || source.id,
+				sourceName: item.sourceName || source.name
+			}));
+			task.results.push(...list);
+			task.stats.push({
+				sourceId: source.id,
+				name: source.name,
+				count: list.length,
+				error: r.error || '',
+				ms: Date.now() - started
+			});
+			task.done++;
+		}
+	};
+	await Promise.all(Array.from({ length: Math.min(SEARCH_CONCURRENCY, queue.length) }, worker));
+	task.status = 'done';
+	task.finishedAt = Date.now();
+	setTimeout(() => {
+		if (searches.get(task.id)?.status === 'done') searches.delete(task.id);
+	}, 10 * 60 * 1000).unref?.();
 }
 
 // ------------------------------------------------------------
@@ -521,6 +598,35 @@ async function handle(req, res) {
 		} catch (e) {
 			return json(res, 400, { error: e.message || String(e) });
 		}
+	}
+
+	if (p === '/api/search-all' && req.method === 'POST') {
+		try {
+			const { sources: list, keyword } = await readJson(req);
+			if (!Array.isArray(list) || !list.length) return json(res, 400, { error: '没有可搜索的书源' });
+			if (!keyword) return json(res, 400, { error: '请输入关键词' });
+			const sources = list.map((s) => s.source || s).filter((s) => s && s.id);
+			const task = startSearch(sources, String(keyword).trim());
+			return json(res, 200, { searchId: task.id, total: task.total });
+		} catch (e) {
+			return json(res, 400, { error: e.message || String(e) });
+		}
+	}
+
+	const searchMatch = p.match(/^\/api\/search-all\/([^/]+)$/);
+	if (searchMatch && req.method === 'GET') {
+		const task = searches.get(searchMatch[1]);
+		if (!task) return json(res, 404, { error: '搜索任务不存在或已过期' });
+		return json(res, 200, {
+			id: task.id,
+			status: task.status,
+			done: task.done,
+			total: task.total,
+			results: task.results,
+			stats: task.stats,
+			startedAt: task.startedAt,
+			finishedAt: task.finishedAt
+		});
 	}
 
 	if (p === '/api/search' && req.method === 'POST') {

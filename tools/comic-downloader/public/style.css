@@ -178,38 +178,70 @@ textarea { resize: vertical; min-height: 92px; font-family: ui-monospace, Consol
 .hint.error { color: var(--red); }
 .note { color: var(--ink-3); font-size: 11.5px; line-height: 1.65; margin: 0; }
 
-/* ---------- 搜索结果 ---------- */
-.results { display: flex; flex-direction: column; gap: 6px; max-height: 430px; overflow: auto; padding-right: 2px; }
-.result {
-	display: flex;
-	gap: 12px;
+/* ---------- 搜索结果（聚合多源，表格式） ---------- */
+.results { display: flex; flex-direction: column; max-height: 470px; overflow: auto; padding-right: 2px; }
+.result-head, .result {
+	display: grid;
+	grid-template-columns: 94px minmax(0, 1fr) 96px 132px;
+	gap: 10px;
 	align-items: center;
-	padding: 9px 10px;
-	border: 1px solid transparent;
-	border-radius: 10px;
-	text-align: left;
-	background: transparent;
 	width: 100%;
+	text-align: left;
+}
+.result-head {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--card);
+	font-size: 11px;
+	color: var(--ink-3);
+	padding: 6px 9px 5px;
+	border-bottom: 1px solid var(--line);
+}
+.result {
+	border: 1px solid transparent;
+	border-radius: 8px;
+	background: transparent;
+	padding: 8px 9px;
 }
 .result:hover { background: var(--card-2); border-color: var(--line); }
 .result.active { background: var(--accent-soft); border-color: #dcc3a2; }
-.result .cover {
-	width: 42px; height: 58px;
-	flex: 0 0 42px;
-	border-radius: 3px;
-	object-fit: cover;
-	background: linear-gradient(145deg, #c2945f, #96672f);
-	display: grid; place-items: center;
-	color: #fff8ec;
-	font-family: "Songti SC", "SimSun", serif;
-	font-size: 17px;
+.result .site {
+	font-size: 11.5px;
+	color: var(--accent);
+	font-weight: 650;
+	white-space: nowrap;
 	overflow: hidden;
+	text-overflow: ellipsis;
 }
-.result .cover img { width: 100%; height: 100%; object-fit: cover; }
-.result .info { min-width: 0; flex: 1; }
-.result .title { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.result .byline { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.result .go { color: var(--ink-3); font-size: 18px; flex: 0 0 auto; }
+.result .title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--ink);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.result .author, .result .latest {
+	font-size: 11.5px;
+	color: var(--ink-3);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.search-failed {
+	margin-top: 10px;
+	padding: 10px 11px;
+	background: var(--card-2);
+	border: 1px dashed var(--line-strong);
+	border-radius: 9px;
+	font-size: 11.5px;
+	color: var(--ink-3);
+	line-height: 1.75;
+	word-break: break-all;
+}
+.search-failed b { color: var(--ink-2); }
+.search-empty { color: var(--ink-3); font-size: 12.5px; text-align: center; padding: 26px 0; margin: 0; }
 
 /* ---------- 选中区 ---------- */
 .selection {
@@ -328,5 +360,7 @@ textarea { resize: vertical; min-height: 92px; font-family: ui-monospace, Consol
 	.layout { grid-template-columns: 1fr; padding: 8px 14px 30px; }
 	.topbar { padding: 18px 14px 6px; flex-wrap: wrap; }
 	.top-actions code { max-width: 100%; }
-	.results { max-height: 320px; }
+	.results { max-height: 340px; }
+	.result-head, .result { grid-template-columns: 80px minmax(0, 1fr) 92px; }
+	.result-head span:last-child, .result .latest { display: none; }
 }

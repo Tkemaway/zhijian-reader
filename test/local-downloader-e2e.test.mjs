@@ -30,6 +30,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sitePort = 18091;
 const site = http.createServer((req, res) => {
 	const u = new URL(req.url, `http://127.0.0.1:${sitePort}`);
+	if (u.pathname === '/empty') {
+		res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+		res.end('<html><body><p>没有结果</p></body></html>');
+		return;
+	}
 	if (u.pathname === '/search') {
 		res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
 		res.end(`<html><body><div class="item"><a href="/book/1">测试漫画</a><span>某作者</span></div></body></html>`);
@@ -97,6 +102,27 @@ try {
 	}).then((r) => r.json());
 	check('搜索命中 1 条', searchRes.results?.length === 1, JSON.stringify(searchRes));
 	check('搜索结果书名', searchRes.results?.[0]?.bookName === '测试漫画', JSON.stringify(searchRes.results?.[0]));
+
+	// 多源聚合：一个源有结果、一个源没有
+	const startedSearch = await fetch(`${dlBase}/api/search-all`, {
+		method: 'POST', headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			keyword: '测试',
+			sources: [source, { ...source, id: 'empty-src', name: '空源', searchUrl: '/empty?q={{key}}' }]
+		})
+	}).then((r) => r.json());
+	check('聚合搜索任务创建', !!startedSearch.searchId, JSON.stringify(startedSearch));
+
+	let searchTask = null;
+	for (let i = 0; i < 60; i++) {
+		await sleep(150);
+		searchTask = await fetch(`${dlBase}/api/search-all/${startedSearch.searchId}`).then((r) => r.json());
+		if (searchTask.status === 'done') break;
+	}
+	check('聚合搜索完成', searchTask?.status === 'done', JSON.stringify(searchTask?.status));
+	check('聚合结果 1 条', searchTask?.results?.length === 1, JSON.stringify(searchTask?.results));
+	check('统计覆盖 2 个源', searchTask?.stats?.length === 2, JSON.stringify(searchTask?.stats));
+	check('标记无结果的源', searchTask?.stats?.some((s) => s.count === 0), JSON.stringify(searchTask?.stats));
 
 	const tocRes = await fetch(`${dlBase}/api/toc`, {
 		method: 'POST', headers: { 'Content-Type': 'application/json' },
