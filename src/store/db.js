@@ -272,9 +272,12 @@ export async function saveChapters(bookId, chapterList) {
  * @param {string} bookId
  * @param {Array<{idx:number,title:string,images:Array<{bytes:any,mime?:string,w?:number,h?:number}>,url?:string}>} chapters
  */
-export async function saveComicChapters(bookId, chapters) {
+export async function saveComicChapters(bookId, chapters, { shouldStop = null } = {}) {
 	const db = await openDb();
 	let saved = 0;
+	// 阅读中迁移时，用户可能马上切话：每写一小批就检查一次，
+	// 一旦切话就停在「章节元信息还没覆盖」的位置——旧数据仍完整，下次再迁。
+	const stopped = () => !!(shouldStop && shouldStop());
 
 	const delPages = async (chapterIdx, from, to) => {
 		if (from >= to) return;
@@ -288,6 +291,7 @@ export async function saveComicChapters(bookId, chapters) {
 	};
 
 	for (const ch of chapters) {
+		if (stopped()) return { saved, aborted: true };
 		const images = ch.images || [];
 		const meta = images.map((im) => ({ mime: im.mime || 'image/jpeg', w: im.w || 0, h: im.h || 0 }));
 
@@ -295,14 +299,15 @@ export async function saveComicChapters(bookId, chapters) {
 		const old = await reqValue(db.transaction('chapters').objectStore('chapters').get([bookId, ch.idx]));
 		const oldCount = old?.pages?.length || old?.images?.length || 0;
 
-		// 1) 先写页字节：每 8 页一个事务，避免单次写入过大。
+		// 1) 先写页字节：每 2 页一个事务，单次 structured-clone 更小（大图不会瞬间翻倍）。
 		// 顺序很重要——先写页、后写章节元信息。
 		// 旧书迁移时若中途失败，章节记录里的 images 还在，不会把书变成空的。
-		for (let i = 0; i < images.length; i += 8) {
+		for (let i = 0; i < images.length; i += 2) {
+			if (stopped()) return { saved, aborted: true };
 			await new Promise((resolve, reject) => {
 				const t = db.transaction('comicPages', 'readwrite');
 				const store = t.objectStore('comicPages');
-				for (let k = 0; k < 8 && i + k < images.length; k++) {
+				for (let k = 0; k < 2 && i + k < images.length; k++) {
 					const im = images[i + k];
 					store.put({
 						bookId,
@@ -319,6 +324,7 @@ export async function saveComicChapters(bookId, chapters) {
 			});
 		}
 		// 2) 章节元信息（不含字节）——这一步之后旧 images 才被替换掉
+		if (stopped()) return { saved, aborted: true };
 		await new Promise((resolve, reject) => {
 			const t = db.transaction('chapters', 'readwrite');
 			t.objectStore('chapters').put({
@@ -339,7 +345,7 @@ export async function saveComicChapters(bookId, chapters) {
 		await delPages(ch.idx, images.length, oldCount);
 		saved++;
 	}
-	return saved;
+	return { saved, aborted: false };
 }
 
 /** 读取漫画某一页的字节（{ bytes, mime, w, h }）；不存在返回 null */

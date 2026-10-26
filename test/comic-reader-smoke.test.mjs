@@ -124,7 +124,7 @@ console.log('== 1. 旧版章节（图片存在章节记录里）==');
 	document.body.appendChild(el);
 
 	await mod.renderComicReader(el, makeApp(book));
-	await sleep(250);
+	await sleep(30);
 
 	const error = el.querySelector('.comic-error');
 	check('没有落到错误页', !error, error?.textContent?.slice(0, 80));
@@ -132,9 +132,10 @@ console.log('== 1. 旧版章节（图片存在章节记录里）==');
 	check('图片拿到 blob 地址', String(el.querySelector('.comic-page img')?.getAttribute('src') || '').startsWith('blob:'));
 	check('进度条页码显示', /1 \/ 1 页/.test(el.querySelector('#comic-counter')?.textContent || ''), el.querySelector('#comic-counter')?.textContent);
 
-	// 切下一话 / 切换翻页模式：这两条路径以前也踩过运行时错误
+	// 立刻切下一话：此时当前话的迁移任务还没跑完，
+	// 这是真机上「点下一话就闪退」的场景（旧话+新话内存叠加）
 	el.querySelector('#comic-next')?.dispatchEvent(new window.Event('click'));
-	await sleep(300);
+	await sleep(400);
 	check('能切到下一话', /2 \/ 2/.test(el.querySelector('#comic-chapter')?.textContent || ''), el.querySelector('#comic-chapter')?.textContent);
 	check('下一话有图', String(el.querySelector('.comic-page img')?.getAttribute('src') || '').startsWith('blob:'));
 	check('切话没有错误页', !el.querySelector('.comic-error'), el.querySelector('.comic-error')?.textContent?.slice(0, 80));
@@ -143,11 +144,13 @@ console.log('== 1. 旧版章节（图片存在章节记录里）==');
 	await sleep(200);
 	check('切到横向翻页模式', el.querySelector('#comic-body')?.dataset.mode === 'paged', el.querySelector('#comic-body')?.dataset.mode);
 
-	// 后台迁移：章节记录应变成 pages 元信息，字节进 comicPages
-	await sleep(250);
-	const migrated = await db.getChapter('old_comic', 0);
-	check('旧章节已迁移为页元信息', migrated?.pages?.length === 1 && !migrated?.images, JSON.stringify(Object.keys(migrated || {})));
+	// 回到第一话并停留：迁移会在空闲时完成（切话会中断迁移，回来时应自动重试）
+	el.querySelector('#comic-prev')?.dispatchEvent(new window.Event('click'));
+	await sleep(900);
+	const migrated0 = await db.getChapter('old_comic', 0);
+	check('旧章节已迁移为页元信息', migrated0?.pages?.length === 1 && !migrated0?.images, JSON.stringify(Object.keys(migrated0 || {})));
 	check('迁移后页字节可读', (await db.getComicPage('old_comic', 0, 0))?.bytes?.length > 50);
+	check('重新打开后仍是正常页', !!el.querySelector('.comic-page img') && !el.querySelector('.comic-error'));
 	mod.unmountComicReader();
 	el.remove();
 }

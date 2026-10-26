@@ -1,7 +1,7 @@
 {
   "name": "zhijian-reader",
   "private": true,
-  "version": "3.5.4",
+  "version": "3.5.5",
   "type": "module",
   "description": "纸间 - 静心阅读。Kindle 质感的手机小说阅读器",
   "scripts": {

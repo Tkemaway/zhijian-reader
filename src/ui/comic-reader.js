@@ -19,6 +19,8 @@ import { icon, showSheet } from './kit.js';
 const MODE_KEY = 'zj-comic-mode-v1';
 /** 旧版「整话图片存一条记录」的书：每话已迁移过的标记，避免反复写库 */
 const migratedChapters = new Set();
+/** 正在读章节的数量：迁移必须等它归零，否则「旧话字节 + 新话字节」同时驻留会闪退 */
+let _loadingCount = 0;
 let C = null; // 当前漫画会话
 /** 正在播放退出动画：这期间再按返回键也要吞掉，不能直接退出 App */
 let _closing = false;
@@ -123,6 +125,7 @@ export async function renderComicReader(root, app) {
 		urls: new Map(),
 		pageLoads: new Set(), // 正在从 IndexedDB 读的页，避免重复读
 		gen: 0, // 每重建一次书页 +1：异步读页回来时用来判断章节是否已经切走
+		chapterToken: 0, // 只在「切话」时 +1：迁移用它判断用户是否已经离开这一话
 		el,
 		body,
 		strip: null,
@@ -234,6 +237,10 @@ export async function renderComicReader(root, app) {
 		chapterLabel.textContent = `${idx + 1} / ${C.toc.length} · ${C.toc[idx]?.title || ''}`;
 		prevBtn.disabled = idx === 0;
 		nextBtn.disabled = idx >= C.toc.length - 1;
+		// 先把上一话的图片、Blob URL、字节都释放掉再读新话 ——
+		// 222MB 的书一话就几十 MB，旧新同时驻留是最常见的 OOM 闪退点
+		_loadingCount++;
+		clearChapterView();
 
 		try {
 			// 本地漫画：章节记录里只有每页的 mime/w/h，字节按页从 comicPages 读
@@ -255,7 +262,6 @@ export async function renderComicReader(root, app) {
 			// 这样第一次顺序阅读时，每次切话都已经就绪，不会半路卡一下。
 			if (legacy.length && !chapter.pages) {
 				scheduleMigrate(idx, chapter.title || C.toc[idx]?.title || '', legacy);
-				if (idx + 1 < C.toc.length) scheduleMigrateFromDb(idx + 1);
 			}
 			C.page = position === 'end' ? images.length - 1 : position === 'start' ? 0 : Math.min(pageIdx, images.length - 1);
 			buildStrip();
@@ -266,8 +272,21 @@ export async function renderComicReader(root, app) {
 			hideLoading();
 			renderError(e.message || String(e));
 		} finally {
+			_loadingCount = Math.max(0, _loadingCount - 1);
 			if (C && !C.destroyed) C.loading = false;
 		}
+	}
+
+	/** 清空当前话的 DOM 与图片内存（切话/重试前调用） */
+	function clearChapterView() {
+		C.gen++; // 让正在进行的异步取页全部作废
+		C.chapterToken++; // 让上一话的迁移任务知道「已经切走了」
+		revokeUrls();
+		body.innerHTML = '';
+		C.strip = null;
+		C.pages = [];
+		C.page = 0;
+		counter.textContent = '—';
 	}
 
 	function showLoading(text) {
@@ -302,9 +321,17 @@ export async function renderComicReader(root, app) {
 	 * 必须用函数声明而不是 const —— 首次 await loadChapter 就会调用它，
 	 * 用 const 会落在暂时性死区（真机报 "Cannot access 'b' before initialization"）。
 	 */
-	function idleRun(fn) {
-		if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 10000 });
-		else setTimeout(fn, 4000);
+	function idleRun(fn, attempt = 0) {
+		const run = () => {
+			// 正在切话就先让路：迁移和读新话叠在一起会把内存打满
+			if (_loadingCount > 0 && attempt < 12) {
+				setTimeout(() => idleRun(fn, attempt + 1), 700);
+				return;
+			}
+			fn();
+		};
+		if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 12000 });
+		else setTimeout(run, 2000);
 	}
 
 	/** 用已经读进内存的图片迁移一话（不再重复读库） */
@@ -312,26 +339,21 @@ export async function renderComicReader(root, app) {
 		const key = `${book.id}:${idx}`;
 		if (migratedChapters.has(key)) return;
 		migratedChapters.add(key);
-		idleRun(() => {
-			saveComicChapters(book.id, [{ idx, title, images }]).catch(() => migratedChapters.delete(key));
-		});
-	}
-
-	/** 预先迁移还没打开过的一话：只读一次库，空闲时写 */
-	function scheduleMigrateFromDb(idx) {
-		const key = `${book.id}:${idx}`;
-		if (migratedChapters.has(key)) return;
-		migratedChapters.add(key);
+		const token = C.chapterToken;
 		idleRun(async () => {
+			if (!C || C.destroyed || C.chapterToken !== token) { migratedChapters.delete(key); return; }
 			try {
-				const ch = await getChapter(book.id, idx);
-				if (!ch?.images?.length) return; // 已经是按页存 / 没有内容
-				const imgs = ch.images.map((im) => {
-					if ((im.w && im.h) || !im.bytes) return im;
-					const dim = imageSize(im.bytes);
-					return dim.w && dim.h ? { ...im, w: dim.w, h: dim.h } : im;
+				const res = await saveComicChapters(book.id, [{ idx, title, images }], {
+					shouldStop: () => _loadingCount > 0 || !C || C.destroyed || C.chapterToken !== token
 				});
-				await saveComicChapters(book.id, [{ idx, title: ch.title || '', images: imgs }]);
+				if (res?.aborted) { migratedChapters.delete(key); return; }
+				// 写入成功：当前话以后都走「按页读取」，把几十 MB 的数组整体放掉
+				// （已加载的页保留 blob；没加载的页下次从 comicPages 取）
+				if (!C || C.destroyed || C.idx !== idx) return;
+				for (const page of C.pages) {
+					page.stored = true;
+					page.bytes = null;
+				}
 			} catch {
 				migratedChapters.delete(key);
 			}
