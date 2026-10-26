@@ -20,6 +20,8 @@ const MODE_KEY = 'zj-comic-mode-v1';
 /** 旧版「整话图片存一条记录」的书：每话已迁移过的标记，避免反复写库 */
 const migratedChapters = new Set();
 let C = null; // 当前漫画会话
+/** 正在播放退出动画：这期间再按返回键也要吞掉，不能直接退出 App */
+let _closing = false;
 
 const escapeHtml = (s) => String(s ?? '')
 	.replace(/&/g, '&amp;')
@@ -43,6 +45,7 @@ function saveMode(mode) {
  * 打开漫画阅读器（由 reader.js 在 book.kind === 'comic' 时调用）
  */
 export async function renderComicReader(root, app) {
+	_closing = false;
 	unmountComicReader();
 
 	const { book, chapterIdx = 0 } = app.state.reader || {};
@@ -248,17 +251,11 @@ export async function renderComicReader(root, app) {
 			C.pages = images;
 
 			// 旧版本导入的书：整话图片塞在一条记录里，切话/退出都要搬几十 MB。
-			// 这里在后台（延迟 3 秒、不挡阅读）把它迁移成按页存，下次打开就轻了。
+			// 空闲时把「当前话」迁移成按页存，并预先迁移下一话 ——
+			// 这样第一次顺序阅读时，每次切话都已经就绪，不会半路卡一下。
 			if (legacy.length && !chapter.pages) {
-				const key = `${book.id}:${idx}`;
-				if (!migratedChapters.has(key)) {
-					migratedChapters.add(key);
-					const payload = { idx, title: chapter.title || C.toc[idx]?.title || '', images: legacy };
-					// 空闲时再写，避免迁移本身把当前这次阅读卡住
-					const run = () => saveComicChapters(book.id, [payload]).catch(() => migratedChapters.delete(key));
-					if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 8000 });
-					else setTimeout(run, 4000);
-				}
+				scheduleMigrate(idx, chapter.title || C.toc[idx]?.title || '', legacy);
+				if (idx + 1 < C.toc.length) scheduleMigrateFromDb(idx + 1);
 			}
 			C.page = position === 'end' ? images.length - 1 : position === 'start' ? 0 : Math.min(pageIdx, images.length - 1);
 			buildStrip();
@@ -292,6 +289,42 @@ export async function renderComicReader(root, app) {
 		box.querySelector('button').onclick = () => loadChapter(C.idx, 'keep', { pageIdx: C.page });
 		body.appendChild(box);
 		counter.textContent = '—';
+	}
+
+	const idleRun = (fn) => {
+		if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 10000 });
+		else setTimeout(fn, 4000);
+	};
+
+	/** 用已经读进内存的图片迁移一话（不再重复读库） */
+	function scheduleMigrate(idx, title, images) {
+		const key = `${book.id}:${idx}`;
+		if (migratedChapters.has(key)) return;
+		migratedChapters.add(key);
+		idleRun(() => {
+			saveComicChapters(book.id, [{ idx, title, images }]).catch(() => migratedChapters.delete(key));
+		});
+	}
+
+	/** 预先迁移还没打开过的一话：只读一次库，空闲时写 */
+	function scheduleMigrateFromDb(idx) {
+		const key = `${book.id}:${idx}`;
+		if (migratedChapters.has(key)) return;
+		migratedChapters.add(key);
+		idleRun(async () => {
+			try {
+				const ch = await getChapter(book.id, idx);
+				if (!ch?.images?.length) return; // 已经是按页存 / 没有内容
+				const imgs = ch.images.map((im) => {
+					if ((im.w && im.h) || !im.bytes) return im;
+					const dim = imageSize(im.bytes);
+					return dim.w && dim.h ? { ...im, w: dim.w, h: dim.h } : im;
+				});
+				await saveComicChapters(book.id, [{ idx, title: ch.title || '', images: imgs }]);
+			} catch {
+				migratedChapters.delete(key);
+			}
+		});
 	}
 
 	function pageElAt(i) {
@@ -659,17 +692,23 @@ export async function renderComicReader(root, app) {
 
 /** 关闭（带退出动画），供返回键与左上角按钮共用 */
 export function closeComicView() {
+	if (_closing) return true; // 退出动画进行中：再按一次返回也不能退出 App
 	if (!C) return false;
+	_closing = true;
 	const { app, book } = C;
 	const el = C.el;
-	unmountComicReader({ keepDom: true });
+	try {
+		unmountComicReader({ keepDom: true });
+	} catch { /* 清理失败也不能把用户困在阅读器里 */ }
 	if (el && el.isConnected) {
 		el.classList.add('leaving');
 		setTimeout(() => {
+			_closing = false;
 			el.remove();
 			app.exitReader(book.id);
 		}, 220);
 	} else {
+		_closing = false;
 		app.exitReader(book.id);
 	}
 	return true;
@@ -712,7 +751,7 @@ export function unmountComicReader({ keepDom = false } = {}) {
 	for (const url of session.urls?.values?.() || []) {
 		try { URL.revokeObjectURL(url); } catch { /* ignore */ }
 	}
-	keepAwake(false);
-	scheduleSyncAfterRead();
+	try { keepAwake(false); } catch { /* ignore */ }
+	try { scheduleSyncAfterRead(); } catch { /* ignore */ }
 	if (!keepDom) session.el?.remove();
 }
