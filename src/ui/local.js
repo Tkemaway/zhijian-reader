@@ -7,7 +7,7 @@
 import { getBooks } from '../store/db.js';
 import { isFileSyncEnabled, importBookFromBytes } from '../store/book-files.js';
 import { requestBytes } from '../core/http.js';
-import { bookCard, importLocalBook } from './library.js';
+import { bookCard, importLocalBooks } from './library.js';
 import { toast, showSheet } from './kit.js';
 
 export async function renderLocal(container, app) {
@@ -62,14 +62,15 @@ export async function renderLocal(container, app) {
 	// 导入文件
 	const input = document.createElement('input');
 	input.type = 'file';
+	input.multiple = true;
 	input.accept = '.txt,.text,.epub,.cbz';
 	input.style.display = 'none';
 	container.appendChild(input);
 	container.querySelector('#local-import').addEventListener('click', () => input.click());
 	input.addEventListener('change', async () => {
-		const file = input.files?.[0];
+		const files = [...(input.files || [])];
 		input.value = '';
-		if (file) await importLocalBook(file, app);
+		if (files.length) await importLocalBooks(files, app);
 	});
 
 	// 从链接导入：粘贴 EPUB / TXT 的直接下载地址（不内置任何书源）

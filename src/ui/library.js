@@ -54,14 +54,15 @@ export async function renderLibrary(container, app) {
 	// 导入本地书（TXT / EPUB / 漫画 CBZ）
 	const fileInput = document.createElement('input');
 	fileInput.type = 'file';
+	fileInput.multiple = true;
 	fileInput.accept = '.txt,.text,.epub,.cbz';
 	fileInput.style.display = 'none';
 	container.appendChild(fileInput);
 	container.querySelector('#import-btn').addEventListener('click', () => fileInput.click());
 	fileInput.addEventListener('change', async () => {
-		const file = fileInput.files?.[0];
+		const files = [...(fileInput.files || [])];
 		fileInput.value = '';
-		if (file) await importLocalBook(file, app);
+		if (files.length) await importLocalBooks(files, app);
 	});
 
 	// 立即同步（不用进设置页）
@@ -523,7 +524,18 @@ export function escapeHtml(s) {
 //  本地书导入（TXT / EPUB）
 // ============================================================
 
-export async function importLocalBook(file, app) {
+/**
+ * 批量导入：PC 上下载/打包好的多卷 CBZ 可以一次全选。
+ * 逐个导入（每个文件自己写库），只在最后一个完成后刷新书架。
+ */
+export async function importLocalBooks(files, app) {
+	const list = [...(files || [])];
+	for (let i = 0; i < list.length; i++) {
+		await importLocalBook(list[i], app, { refresh: i === list.length - 1 });
+	}
+}
+
+export async function importLocalBook(file, app, { refresh = true } = {}) {
 	const name = file.name || '本地书籍';
 	toast(`正在导入《${name}》…`, 3000);
 	try {
@@ -574,7 +586,7 @@ export async function importLocalBook(file, app) {
 			})
 			.catch(() => {});
 		kickAutoSync(); // 导入完自动同步一次（3 秒内多次导入会合并）
-		app.refresh();
+		if (refresh) app.refresh();
 	} catch (e) {
 		console.error(e);
 		toast(`导入失败：${e.message || e}`, 3400);
