@@ -9,6 +9,7 @@
  * 在线下载请用 PC 上的 tools/comic-downloader，导出 CBZ 再导入。
  */
 import './comic-reader.css';
+import { imageSize } from '../core/comic-book.js';
 import { getToc, getChapter, saveProgress, updateBook } from '../store/db.js';
 import { addReadingSeconds } from '../store/stats.js';
 import { keepAwake } from '../store/wakelock.js';
@@ -51,9 +52,11 @@ export async function renderComicReader(root, app) {
 	el.innerHTML = '<div class="comic-loading show"><span class="comic-spinner"></span><em>正在打开…</em></div>';
 	// 先挂一个最小会话：读目录期间用户按返回键也能正常退出，
 	// 否则 closeReaderView 找不到会话会直接退出 App
-	C = { app, book, toc: [], idx: 0, el, destroyed: false, controller: new AbortController(), urls: [] };
+	C = { app, book, toc: [], idx: 0, el, destroyed: false, controller: new AbortController(), urls: new Map() };
 	// 退出动画期间元素还连着 DOM，但会话已经销毁 —— 用这个判断避免「关掉后又弹回来」
 	const alive = () => el.isConnected && !el.classList.contains('leaving');
+	/** 下一帧（等浏览器完成一次布局） */
+	const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
 	const toc = (await getToc(book.id)) || [];
 	if (!alive()) return;
@@ -65,7 +68,7 @@ export async function renderComicReader(root, app) {
 				<button class="btn btn-soft btn-sm" id="comic-empty-back">返回</button>
 			</div>`;
 		el.querySelector('#comic-empty-back').onclick = () => closeComicView();
-		C = { app, book, toc, idx: 0, el, destroyed: false, controller: new AbortController(), urls: [] };
+		C = { app, book, toc, idx: 0, el, destroyed: false, controller: new AbortController(), urls: new Map() };
 		return;
 	}
 
@@ -109,7 +112,7 @@ export async function renderComicReader(root, app) {
 		mode,
 		page: 0,
 		pages: [],
-		urls: [],
+		urls: new Map(),
 		el,
 		body,
 		strip: null,
@@ -223,7 +226,13 @@ export async function renderComicReader(root, app) {
 			// 本地漫画：一话 = 一条章节记录里的图片字节，直接读库即可
 			const chapter = await getChapter(book.id, idx);
 			if (signal.aborted || !C || C.destroyed) return;
-			const images = chapter?.images || [];
+			// 旧版本导入的章节没有 w/h：这里补读一次图片头（只读几十字节，不解码），
+			// 让占位高度立刻是准的，不必等图片加载完再纠正
+			const images = (chapter?.images || []).map((im) => {
+				if ((im.w && im.h) || !im.bytes) return im;
+				const dim = imageSize(im.bytes);
+				return dim.w && dim.h ? { ...im, w: dim.w, h: dim.h } : im;
+			});
 			if (!images.length) throw new Error('这一话没有图片，文件可能导入不完整');
 			C.pages = images;
 			C.page = position === 'end' ? images.length - 1 : position === 'start' ? 0 : Math.min(pageIdx, images.length - 1);
@@ -260,10 +269,91 @@ export async function renderComicReader(root, app) {
 		counter.textContent = '—';
 	}
 
+	function pageElAt(i) {
+		return C?.strip?.children?.[i] || null;
+	}
+
+	function pageImgAt(i) {
+		return pageElAt(i)?.querySelector('img') || null;
+	}
+
+	/**
+	 * 只有进入视野附近的页才创建 Blob URL。
+	 * 早期实现给整话每一页都建了 URL —— 40 页的章节会瞬间多出几十 MB，
+	 * 低内存机型直接闪退；这里改为按需创建、远处释放。
+	 */
+	function ensureUrl(i) {
+		if (!C || C.destroyed) return;
+		if (i < 0 || i >= C.pages.length) return;
+		if (C.urls.has(i)) return;
+		const imgEl = pageImgAt(i);
+		if (!imgEl) return;
+		const page = C.pages[i];
+		let url;
+		try {
+			let blob = page.blob instanceof Blob ? page.blob : null;
+			if (!blob) {
+				blob = new Blob([page.bytes], { type: page.mime || 'image/jpeg' });
+				// 换成 Blob 后立刻丢掉 ArrayBuffer：字节由浏览器托管（可落盘），
+				// 不再占 V8 堆。整话几十张图时，这一条能省下几十 MB。
+				page.blob = blob;
+				page.bytes = null;
+			}
+			url = URL.createObjectURL(blob);
+		} catch {
+			return;
+		}
+		C.urls.set(i, url);
+		imgEl.style.visibility = '';
+		imgEl.alt = `第 ${i + 1} 页`;
+		imgEl.src = url;
+	}
+
+	/** 离当前页很远的图片释放掉，内存只保留一屏多一点 */
+	function releaseUrl(i) {
+		const url = C?.urls.get(i);
+		if (!url) return;
+		const imgEl = pageImgAt(i);
+		if (imgEl) {
+			// 先按真实像素固定高度，再删 src —— 否则这一页会塌成 0 高，滚动位置乱跳
+			if (imgEl.naturalWidth && imgEl.naturalHeight) {
+				pageElAt(i).style.aspectRatio = `${imgEl.naturalWidth} / ${imgEl.naturalHeight}`;
+			}
+			// 隐藏而不是只删 src：部分 WebView 在无 src 时会画出 alt 文字/破图标
+			imgEl.style.visibility = 'hidden';
+			imgEl.alt = '';
+			imgEl.removeAttribute('src');
+		}
+		URL.revokeObjectURL(url);
+		C.urls.delete(i);
+	}
+
+	/** 当前页附近要加载的窗口 */
+	function ensureWindow(page) {
+		if (!C) return;
+		// 竖向模式一次只多载 3 页：条漫单页可能很长，窗口越大越容易吃满内存
+		const before = 1;
+		const after = C.mode === 'paged' ? 2 : 3;
+		const from = Math.max(0, page - before);
+		const to = Math.min(C.pages.length - 1, page + after);
+		for (let i = from; i <= to; i++) ensureUrl(i);
+	}
+
+	/** 回收窗口外的 URL */
+	function pruneUrls(page) {
+		if (!C) return;
+		const before = C.mode === 'paged' ? 2 : 4;
+		const after = C.mode === 'paged' ? 3 : 8;
+		const from = page - before;
+		const to = page + after;
+		for (const i of [...C.urls.keys()]) {
+			if (i < from || i > to) releaseUrl(i);
+		}
+	}
+
 	function buildStrip() {
 		revokeUrls();
 		body.innerHTML = '';
-		C.urls = [];
 		const strip = document.createElement('div');
 		strip.className = 'comic-strip';
 		C.strip = strip;
@@ -272,13 +362,20 @@ export async function renderComicReader(root, app) {
 			const pageEl = document.createElement('div');
 			pageEl.className = 'comic-page';
 			pageEl.dataset.i = String(i);
+			// 解析时已从图片头读到像素尺寸 → 未加载也占正确高度，滚动条不乱跳；
+			// 旧版本导入的书没有 w/h，用竖版比例兜底，加载后再按真实尺寸校正
+			const ar = img.w && img.h ? img.w / img.h : 0.72;
+			pageEl.style.setProperty('--ar', String(ar));
 			const imageEl = document.createElement('img');
-			imageEl.alt = `第 ${i + 1} 页`;
+			imageEl.alt = '';
 			imageEl.decoding = 'async';
 			imageEl.loading = 'lazy';
-			const url = URL.createObjectURL(new Blob([img.bytes], { type: img.mime || 'image/jpeg' }));
-			C.urls.push(url);
-			imageEl.dataset.src = url;
+			imageEl.style.visibility = 'hidden'; // 等 ensureUrl 真正给到图片再显示
+			imageEl.addEventListener('load', () => {
+				if (imageEl.naturalWidth && imageEl.naturalHeight) {
+					pageEl.style.aspectRatio = `${imageEl.naturalWidth} / ${imageEl.naturalHeight}`;
+				}
+			}, { once: true });
 			pageEl.appendChild(imageEl);
 			strip.appendChild(pageEl);
 		});
@@ -294,53 +391,85 @@ export async function renderComicReader(root, app) {
 			body.appendChild(foot);
 		}
 
-		// 懒加载：进入视口前 1.2 屏再取图，长章节也不会一次性解码
 		observeImages();
 		updateCounter();
 	}
 
 	function observeImages() {
 		observer?.disconnect();
+		observer = null;
+		if (!C?.strip) return;
 		if (typeof IntersectionObserver === 'undefined') {
-			C.strip.querySelectorAll('img[data-src]').forEach((img) => { img.src = img.dataset.src; });
+			// 没有 IntersectionObserver（极老 WebView）：只加载当前页附近
+			ensureWindow(C.page);
 			return;
 		}
 		observer = new IntersectionObserver((entries) => {
 			for (const entry of entries) {
 				if (!entry.isIntersecting) continue;
-				const img = entry.target;
-				if (img.dataset.src && !img.src) img.src = img.dataset.src;
-				observer.unobserve(img);
+				const holder = entry.target.parentElement;
+				ensureUrl(Number(holder?.dataset.i));
 			}
-		}, { root: body, rootMargin: C.mode === 'paged' ? '0px 1500px' : '1200px 0px' });
-		C.strip.querySelectorAll('img[data-src]').forEach((img) => observer.observe(img));
-
-		// 当前页先加载，保证恢复位置时高度是确定的
-		loadUpTo(C.page);
+		}, { root: body, rootMargin: C.mode === 'paged' ? '0px 1000px' : '700px 0px' });
+		C.strip.querySelectorAll('img').forEach((img) => observer.observe(img));
+		ensureWindow(C.page);
 	}
 
-	function loadUpTo(page) {
-		if (!C.strip) return;
-		const pages = C.strip.children;
-		for (let i = 0; i <= page && i < pages.length; i++) {
-			const img = pages[i].querySelector('img');
-			if (img?.dataset.src && !img.src) img.src = img.dataset.src;
-		}
-	}
-
+	/**
+	 * 恢复阅读位置。
+	 * 不再「把目标页之前的所有图都加载+解码」——那是长章节卡顿/闪退的主因；
+	 * 占位高度已按真实尺寸预留，直接滚过去即可，最多加载完当前页再校正一次。
+	 */
 	async function restorePosition(position, pageIdx) {
 		if (!C || C.destroyed) return;
-		// 竖向模式：后面的图没加载时高度是 0，直接 scrollTop 会差好几页。
-		// 先把目标页之前的图都放出来并等解码，再定位。
-		const target = position === 'end' ? C.pages.length - 1 : position === 'keep' ? pageIdx : -1;
-		if (C.mode === 'vertical' && target > 0) {
-			loadUpTo(target);
-			const imgs = [...C.strip.children].slice(0, target + 1).map((p) => p.querySelector('img')).filter(Boolean);
-			await Promise.allSettled(imgs.map((img) => (img.decode ? img.decode() : Promise.resolve())));
+		const max = C.pages.length - 1;
+		const target = position === 'end' ? max : position === 'keep' ? Math.min(Math.max(0, pageIdx), max) : 0;
+		C.page = target;
+		ensureWindow(target);
+		updateCounter();
+
+		if (C.mode === 'paged') {
+			C.body.scrollLeft = target * C.body.clientWidth;
+			saveProgressSoon();
+			return;
+		}
+
+		await nextFrame();
+		if (!C || C.destroyed) return;
+		C.body.scrollTop = pageElAt(target)?.offsetTop || 0;
+
+		const imgEl = pageImgAt(target);
+		if (imgEl && !imgEl.complete) {
+			await Promise.race([
+				new Promise((r) => imgEl.addEventListener('load', r, { once: true })),
+				new Promise((r) => imgEl.addEventListener('error', r, { once: true })),
+				new Promise((r) => setTimeout(r, 1500))
+			]);
 		}
 		if (!C || C.destroyed) return;
-		jumpToPage(C.page, { smooth: false });
+		// 旧数据没有 w/h 时占位比例是估的，图加载完再对齐一次
+		C.body.scrollTop = pageElAt(target)?.offsetTop || 0;
+		pruneUrls(target);
 		saveProgressSoon();
+	}
+
+	/** 当前视口中线落在第几页（二分，避免长章节每帧遍历几百个节点） */
+	function pageAtOffset(mid) {
+		const pages = C?.strip?.children || [];
+		if (!pages.length) return 0;
+		let lo = 0;
+		let hi = pages.length - 1;
+		let ans = 0;
+		while (lo <= hi) {
+			const m = (lo + hi) >> 1;
+			if (pages[m].offsetTop <= mid) {
+				ans = m;
+				lo = m + 1;
+			} else {
+				hi = m - 1;
+			}
+		}
+		return ans;
 	}
 
 	function jumpToPage(page, { smooth = false } = {}) {
@@ -348,16 +477,13 @@ export async function renderComicReader(root, app) {
 		const max = C.pages.length - 1;
 		const p = Math.max(0, Math.min(max, page));
 		C.page = p;
+		ensureWindow(p);
 		if (C.mode === 'paged') {
-			// 预取相邻页：横向滑动时不会先看到空白再等图
-			for (const i of [p - 1, p, p + 1]) {
-				const img = C.strip.children[i]?.querySelector('img');
-				if (img?.dataset.src && !img.src) img.src = img.dataset.src;
-			}
 			C.body.scrollTo({ left: p * C.body.clientWidth, behavior: smooth ? 'smooth' : 'auto' });
 		} else {
-			const el = C.strip.children[p];
+			const el = pageElAt(p);
 			if (el) C.body.scrollTop = el.offsetTop;
+			pruneUrls(p);
 		}
 		updateCounter();
 	}
@@ -396,22 +522,20 @@ export async function renderComicReader(root, app) {
 					updateCounter();
 					saveProgressSoon();
 				}
+				ensureWindow(C.page);
+				pruneUrls(C.page);
 				return;
 			}
 			const mid = C.body.scrollTop + C.body.clientHeight * 0.4;
-			let page = 0;
-			const pages = C.strip?.children || [];
-			for (let i = 0; i < pages.length; i++) {
-				if (pages[i].offsetTop <= mid) page = i;
-				else break;
-			}
+			const page = pageAtOffset(mid);
 			if (page !== C.page) {
 				C.page = page;
 				updateCounter();
 				saveProgressSoon();
 			}
-			// 快到底了提前解码下一屏
-			loadUpTo(Math.min(C.pages.length - 1, page + 2));
+			// 只保留当前窗口：预载后面几页，释放远处的图片内存
+			ensureWindow(page);
+			pruneUrls(page);
 		});
 	}
 
@@ -473,10 +597,10 @@ export async function renderComicReader(root, app) {
 	}
 
 	function revokeUrls() {
-		for (const url of C?.urls || []) {
+		for (const url of C?.urls?.values?.() || []) {
 			try { URL.revokeObjectURL(url); } catch { /* ignore */ }
 		}
-		if (C) C.urls = [];
+		if (C) C.urls = new Map();
 		observer?.disconnect();
 		observer = null;
 	}
@@ -534,7 +658,7 @@ export function unmountComicReader({ keepDom = false } = {}) {
 		}).catch(() => {});
 	}
 
-	for (const url of session.urls || []) {
+	for (const url of session.urls?.values?.() || []) {
 		try { URL.revokeObjectURL(url); } catch { /* ignore */ }
 	}
 	keepAwake(false);

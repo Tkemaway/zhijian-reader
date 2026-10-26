@@ -47,8 +47,11 @@
 }
 .comic-body[data-mode='vertical'] .comic-page {
 	width: 100%;
-	/* 图片未加载时给一个占位高度，滚动条不会一直跳 */
-	min-height: 120px;
+	/* 未加载时按图片真实比例预留高度（--ar 由阅读器写入）：
+	   滚动条不跳，恢复阅读位置也不用把前面的图全加载出来 */
+	aspect-ratio: var(--ar, 0.72);
+	min-height: 60px;
+	background: #101013;
 }
 .comic-body[data-mode='paged'] .comic-page {
 	width: 100%;
@@ -66,6 +69,7 @@
 	width: 100%;
 	height: auto;
 	min-height: 1px;
+	background: #101013;
 	user-select: none;
 	-webkit-user-drag: none;
 }

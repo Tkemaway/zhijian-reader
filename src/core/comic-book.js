@@ -3,7 +3,11 @@
  *
  * 与文字书不同，漫画的一「话」是一串图片，没有段落。
  * 解析结果统一为：
- *   { kind:'comic', title, author, chapters:[{ title, images:[{ mime, bytes }] }] }
+ *   { kind:'comic', title, author, chapters:[{ title, images:[{ mime, bytes, w, h }] }] }
+ *
+ * w/h 是从图片头里读出来的像素尺寸（不解码）。阅读器用它给未加载的页
+ * 预留正确高度：既不会「滚动条乱跳」，也不必为了恢复位置把前面所有图
+ * 都加载出来（那是长章节卡顿/闪退的主因）。
  *
  * 分话规则（EPUB 结构差异很大，按可靠度依次降级）：
  *   1. 图片分散在多个目录（每话一个文件夹）→ 一个目录 = 一话，目录名当标题
@@ -33,6 +37,60 @@ const MAX_PAGES_PER_CHAPTER = 40;
 /** 安全阈值：防止误导入超大文件把内存打满 */
 const MAX_TOTAL_IMAGES = 4000;
 const MAX_TOTAL_BYTES = 320 * 1024 * 1024;
+
+/**
+ * 从图片字节头里读出像素尺寸，不解码、不占额外内存。
+ * 支持 JPEG / PNG / GIF / WebP / BMP（漫画里 99% 是前两种）。
+ * 读不出来返回 { w: 0, h: 0 }，阅读器会退回默认竖版比例。
+ */
+export function imageSize(bytes) {
+	const b = bytes;
+	if (!b || b.length < 24) return { w: 0, h: 0 };
+	const u16be = (o) => (b[o] << 8) | b[o + 1];
+	const u16le = (o) => b[o] | (b[o + 1] << 8);
+	const u32be = (o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+	const u32le = (o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+	const u24le = (o) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16);
+
+	// PNG：IHDR 宽高在 16/20
+	if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+		return { w: u32be(16), h: u32be(20) };
+	}
+	// GIF：逻辑屏幕宽高（小端）
+	if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) {
+		return { w: u16le(6), h: u16le(8) };
+	}
+	// BMP
+	if (b[0] === 0x42 && b[1] === 0x4d) {
+		return { w: Math.abs(u32le(18) | 0) || u32le(18), h: Math.abs(u32le(22) | 0) || u32le(22) };
+	}
+	// WebP：RIFF....WEBP，三种子格式
+	if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45) {
+		const fmt = String.fromCharCode(b[12], b[13], b[14], b[15]);
+		if (fmt === 'VP8X') return { w: 1 + u24le(24), h: 1 + u24le(27) };
+		if (fmt === 'VP8 ') return { w: u16le(26) & 0x3fff, h: u16le(28) & 0x3fff };
+		if (fmt === 'VP8L') {
+			const bits = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24);
+			return { w: 1 + (bits & 0x3fff), h: 1 + ((bits >> 14) & 0x3fff) };
+		}
+	}
+	// JPEG：逐段找 SOFn（跳过 C4/C8/CC）
+	if (b[0] === 0xff && b[1] === 0xd8) {
+		let o = 2;
+		while (o + 9 < b.length) {
+			if (b[o] !== 0xff) { o++; continue; }
+			const marker = b[o + 1];
+			if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { o += 2; continue; }
+			const len = u16be(o + 2);
+			if (len < 2) break;
+			if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+				return { w: u16be(o + 7), h: u16be(o + 5) };
+			}
+			o += 2 + len;
+		}
+	}
+	return { w: 0, h: 0 };
+}
 
 /** 这些目录名是「容器」而不是章节名 */
 const GENERIC_DIRS = new Set([
@@ -152,7 +210,9 @@ function toChapters(groups, files) {
 			if (totalBytes > MAX_TOTAL_BYTES) {
 				throw new Error('文件体积过大（超过 320MB），请先分卷再导入');
 			}
-			images.push({ mime: p.mime || mimeOfPath(p.path) || 'image/jpeg', bytes });
+			const mime = p.mime || mimeOfPath(p.path) || 'image/jpeg';
+			const dim = imageSize(bytes);
+			images.push({ mime, bytes, w: dim.w, h: dim.h });
 		}
 		if (images.length) chapters.push({ title: g.title, images });
 	}

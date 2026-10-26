@@ -231,5 +231,20 @@ check('标记含脚本规则的源', realSource.list[0]?.scripted === true);
 check('识别 Cloudflare 拦截页', /人机验证/.test(detectBlockPage('<html><title>Just a moment...</title></html>')));
 check('普通页面不误判', detectBlockPage('<html><title>漫画首页</title></html>') === '');
 
+console.log('== 图片尺寸（用于占位高度）==');
+{
+	const png = Uint8Array.from(Buffer.from(
+		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+		'base64'
+	));
+	const pngSize = comic.imageSize(png);
+	check('PNG 1x1', pngSize.w === 1 && pngSize.h === 1, JSON.stringify(pngSize));
+	const jpeg = Uint8Array.from([0xFF,0xD8,0xFF,0xC0,0x00,0x11,0x08,0x00,0x02,0x00,0x03,0x03,0x01,0x22,0x00,0x02,0x11,0x01,0x03,0x11,0x01,0xFF,0xD9,0x00]);
+	const jpegSize = comic.imageSize(jpeg);
+	check('JPEG 3x2（SOF0）', jpegSize.w === 3 && jpegSize.h === 2, JSON.stringify(jpegSize));
+	check('解析结果带 w/h', parsed.chapters[0].images[0].w === 1 && parsed.chapters[0].images[0].h === 1, JSON.stringify(Object.keys(parsed.chapters[0].images[0])));
+	check('无法识别时返回 0', comic.imageSize(Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25])).w === 0);
+}
+
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`);
 process.exit(fail ? 1 : 0);
