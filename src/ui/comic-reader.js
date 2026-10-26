@@ -283,18 +283,29 @@ export async function renderComicReader(root, app) {
 	function renderError(msg) {
 		revokeUrls();
 		body.innerHTML = '';
+		const raw = String(msg || '');
+		// 英文的运行时错误（TypeError 等）对用户没有意义：给一句中文，细节留在下面
+		const friendly = /^[A-Za-z]/.test(raw) ? '这一话打开失败，请重试' : raw;
 		const box = document.createElement('div');
 		box.className = 'comic-error';
-		box.innerHTML = `<p>${escapeHtml(msg)}</p><button class="btn btn-soft btn-sm">重试</button>`;
+		box.innerHTML = `
+			<p>${escapeHtml(friendly)}</p>
+			${friendly !== raw ? `<p class="comic-error-detail">${escapeHtml(raw)}</p>` : ''}
+			<button class="btn btn-soft btn-sm">重试</button>`;
 		box.querySelector('button').onclick = () => loadChapter(C.idx, 'keep', { pageIdx: C.page });
 		body.appendChild(box);
 		counter.textContent = '—';
 	}
 
-	const idleRun = (fn) => {
+	/**
+	 * 空闲时执行（不支持 requestIdleCallback 就退化为延时）。
+	 * 必须用函数声明而不是 const —— 首次 await loadChapter 就会调用它，
+	 * 用 const 会落在暂时性死区（真机报 "Cannot access 'b' before initialization"）。
+	 */
+	function idleRun(fn) {
 		if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 10000 });
 		else setTimeout(fn, 4000);
-	};
+	}
 
 	/** 用已经读进内存的图片迁移一话（不再重复读库） */
 	function scheduleMigrate(idx, title, images) {
