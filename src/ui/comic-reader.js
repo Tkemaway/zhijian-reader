@@ -10,13 +10,15 @@
  */
 import './comic-reader.css';
 import { imageSize } from '../core/comic-book.js';
-import { getToc, getChapter, saveProgress, updateBook } from '../store/db.js';
-import { addReadingSeconds } from '../store/stats.js';
+import { getToc, getChapter, getComicPage, saveComicChapters, saveProgress, updateBook } from '../store/db.js';
+import { addReadingSeconds, loadSettings } from '../store/stats.js';
 import { keepAwake } from '../store/wakelock.js';
 import { scheduleSyncAfterRead } from '../store/sync.js';
 import { icon, showSheet } from './kit.js';
 
 const MODE_KEY = 'zj-comic-mode-v1';
+/** 旧版「整话图片存一条记录」的书：每话已迁移过的标记，避免反复写库 */
+const migratedChapters = new Set();
 let C = null; // 当前漫画会话
 
 const escapeHtml = (s) => String(s ?? '')
@@ -46,8 +48,11 @@ export async function renderComicReader(root, app) {
 	const { book, chapterIdx = 0 } = app.state.reader || {};
 	if (!book) { app.go('library'); return; }
 
+	const settings = loadSettings();
 	const el = document.createElement('div');
 	el.className = 'reader comic-reader';
+	// 跟随「阅读主题」：纸白 / 羊皮 / 墨水 / 夜间 / 护眼绿，和文字阅读器同一套变量
+	el.dataset.theme = settings.theme || 'paper';
 	root.appendChild(el);
 	el.innerHTML = '<div class="comic-loading show"><span class="comic-spinner"></span><em>正在打开…</em></div>';
 	// 先挂一个最小会话：读目录期间用户按返回键也能正常退出，
@@ -113,6 +118,8 @@ export async function renderComicReader(root, app) {
 		page: 0,
 		pages: [],
 		urls: new Map(),
+		pageLoads: new Set(), // 正在从 IndexedDB 读的页，避免重复读
+		gen: 0, // 每重建一次书页 +1：异步读页回来时用来判断章节是否已经切走
 		el,
 		body,
 		strip: null,
@@ -128,9 +135,12 @@ export async function renderComicReader(root, app) {
 	// 注意：这个声明必须在下面 await loadChapter 之前——首次渲染就会用到
 	let observer = null;
 
-	// 背景/系统栏变暗（退出时由 app.exitReader 还原）
+	// 系统栏跟随阅读主题（退出时由 app.exitReader 还原）
 	const meta = document.querySelector('meta[name="theme-color"]');
-	if (meta) meta.content = '#0c0c0e';
+	if (meta) {
+		const bgMap = { paper: '#fbf7ef', sepia: '#f3ead6', ink: '#f1f0ea', night: '#121315', green: '#dfe9dd' };
+		meta.content = document.body.classList.contains('eink') ? '#ffffff' : (bgMap[settings.theme] || '#fbf7ef');
+	}
 	keepAwake(true);
 	body.dataset.mode = mode;
 	applyModeChrome();
@@ -223,18 +233,33 @@ export async function renderComicReader(root, app) {
 		nextBtn.disabled = idx >= C.toc.length - 1;
 
 		try {
-			// 本地漫画：一话 = 一条章节记录里的图片字节，直接读库即可
+			// 本地漫画：章节记录里只有每页的 mime/w/h，字节按页从 comicPages 读
 			const chapter = await getChapter(book.id, idx);
 			if (signal.aborted || !C || C.destroyed) return;
-			// 旧版本导入的章节没有 w/h：这里补读一次图片头（只读几十字节，不解码），
-			// 让占位高度立刻是准的，不必等图片加载完再纠正
-			const images = (chapter?.images || []).map((im) => {
+			const legacy = (chapter?.images || []).map((im) => {
+				// 旧版本把整话图片塞在章节记录里，且没有 w/h：补读一次图片头
 				if ((im.w && im.h) || !im.bytes) return im;
 				const dim = imageSize(im.bytes);
 				return dim.w && dim.h ? { ...im, w: dim.w, h: dim.h } : im;
 			});
+			const meta = (chapter?.pages || []).map((p) => ({ ...p, stored: true }));
+			const images = legacy.length ? legacy : meta;
 			if (!images.length) throw new Error('这一话没有图片，文件可能导入不完整');
 			C.pages = images;
+
+			// 旧版本导入的书：整话图片塞在一条记录里，切话/退出都要搬几十 MB。
+			// 这里在后台（延迟 3 秒、不挡阅读）把它迁移成按页存，下次打开就轻了。
+			if (legacy.length && !chapter.pages) {
+				const key = `${book.id}:${idx}`;
+				if (!migratedChapters.has(key)) {
+					migratedChapters.add(key);
+					const payload = { idx, title: chapter.title || C.toc[idx]?.title || '', images: legacy };
+					// 空闲时再写，避免迁移本身把当前这次阅读卡住
+					const run = () => saveComicChapters(book.id, [payload]).catch(() => migratedChapters.delete(key));
+					if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 8000 });
+					else setTimeout(run, 4000);
+				}
+			}
 			C.page = position === 'end' ? images.length - 1 : position === 'start' ? 0 : Math.min(pageIdx, images.length - 1);
 			buildStrip();
 			hideLoading();
@@ -282,31 +307,53 @@ export async function renderComicReader(root, app) {
 	 * 早期实现给整话每一页都建了 URL —— 40 页的章节会瞬间多出几十 MB，
 	 * 低内存机型直接闪退；这里改为按需创建、远处释放。
 	 */
-	function ensureUrl(i) {
+	async function ensureUrl(i) {
 		if (!C || C.destroyed) return;
 		if (i < 0 || i >= C.pages.length) return;
-		if (C.urls.has(i)) return;
-		const imgEl = pageImgAt(i);
-		if (!imgEl) return;
+		if (C.urls.has(i) || C.pageLoads.has(i)) return;
 		const page = C.pages[i];
-		let url;
+		const imgEl = pageImgAt(i);
+		if (!page || !imgEl) return;
+		const gen = C.gen;
+		const chapterIdx = C.idx;
+		const loads = C.pageLoads;
+		loads.add(i);
 		try {
 			let blob = page.blob instanceof Blob ? page.blob : null;
 			if (!blob) {
-				blob = new Blob([page.bytes], { type: page.mime || 'image/jpeg' });
-				// 换成 Blob 后立刻丢掉 ArrayBuffer：字节由浏览器托管（可落盘），
-				// 不再占 V8 堆。整话几十张图时，这一条能省下几十 MB。
+				let bytes = page.bytes;
+				// 新版按页存：只在这一页进入视野时才从 IndexedDB 取那几十 KB～几 MB
+				if (!bytes && page.stored) {
+					const rec = await getComicPage(book.id, chapterIdx, i);
+					if (!C || C.destroyed || C.gen !== gen) return;
+					if (!rec?.bytes) { markBroken(i); return; }
+					bytes = rec.bytes;
+					page.mime = rec.mime || page.mime;
+					if (!page.w && rec.w) page.w = rec.w;
+					if (!page.h && rec.h) page.h = rec.h;
+				}
+				if (!bytes) { markBroken(i); return; }
+				blob = new Blob([bytes], { type: page.mime || 'image/jpeg' });
 				page.blob = blob;
-				page.bytes = null;
+				// 字节已经交给 Blob：只有「按页存」的页能丢 ArrayBuffer（旧数据靠它保底）
+				if (page.stored) page.bytes = null;
 			}
-			url = URL.createObjectURL(blob);
+			if (!C || C.destroyed || C.gen !== gen || C.urls.has(i)) return;
+			const url = URL.createObjectURL(blob);
+			C.urls.set(i, url);
+			imgEl.style.visibility = '';
+			imgEl.alt = `第 ${i + 1} 页`;
+			imgEl.src = url;
 		} catch {
-			return;
+			markBroken(i);
+		} finally {
+			loads.delete(i);
 		}
-		C.urls.set(i, url);
-		imgEl.style.visibility = '';
-		imgEl.alt = `第 ${i + 1} 页`;
-		imgEl.src = url;
+	}
+
+	function markBroken(i) {
+		const elPage = pageElAt(i);
+		if (elPage) elPage.dataset.failed = '1';
 	}
 
 	/** 离当前页很远的图片释放掉，内存只保留一屏多一点 */
@@ -326,6 +373,8 @@ export async function renderComicReader(root, app) {
 		}
 		URL.revokeObjectURL(url);
 		C.urls.delete(i);
+		const page = C.pages?.[i];
+		if (page?.stored) page.blob = null;
 	}
 
 	/** 当前页附近要加载的窗口 */
@@ -352,6 +401,8 @@ export async function renderComicReader(root, app) {
 	}
 
 	function buildStrip() {
+		C.gen++;
+		C.pageLoads = new Set();
 		revokeUrls();
 		body.innerHTML = '';
 		const strip = document.createElement('div');

@@ -9,7 +9,7 @@
 import { normalizeBookFields, dedupeBooks, findSameBookRecord } from './book-identity.js';
 
 const DB_NAME = 'zhijian';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let _db = null;
 
@@ -40,6 +40,12 @@ function openDb() {
 			// 本地导入书的原始文件（EPUB/TXT 字节）——用于跨设备云同步时原样重传/重传导入
 			if (!db.objectStoreNames.contains('files')) {
 				db.createObjectStore('files', { keyPath: 'hash' });
+			}
+			// 漫画页字节：一章几十页，若全塞进一条 chapters 记录，
+			// 打开/切换章节时要一次性 structured-clone 几十 MB，主线程直接卡住甚至 OOM。
+			// 拆成「章节只存 w/h/mime」+「页字节单独按页读」，切换章节只读几十字节。
+			if (!db.objectStoreNames.contains('comicPages')) {
+				db.createObjectStore('comicPages', { keyPath: ['bookId', 'chapterIdx', 'pageIdx'] });
 			}
 		};
 		req.onsuccess = () => { _db = req.result; resolve(_db); };
@@ -167,9 +173,16 @@ export async function deleteBook(id, { releaseFile = false } = {}) {
 	// 否则 IndexedDB 的 files 存储会一直留着这些 EPUB/TXT 字节（只增不减）。
 	const doomed = releaseFile ? await reqValue(db.transaction('books').objectStore('books').get(id)) : null;
 	const fileHash = doomed?.fileHash || '';
+	// 漫画页字节分表存，删书时一并清掉（否则 IndexedDB 会一直留着这些图片）
+	let comicChapters = [];
+	try {
+		comicChapters = await reqValue(
+			db.transaction('chapters').objectStore('chapters').index('byBook').getAll(IDBKeyRange.only(id))
+		) || [];
+	} catch { /* 旧库没有该索引也不影响删书 */ }
 	// 删除书 + 目录 + 全部章节 + 进度
 	return new Promise((resolve, reject) => {
-		const t = db.transaction(['books', 'toc', 'chapters', 'progress', 'downloads', 'bookmarks'], 'readwrite');
+		const t = db.transaction(['books', 'toc', 'chapters', 'progress', 'downloads', 'bookmarks', 'comicPages'], 'readwrite');
 		t.objectStore('books').delete(id);
 		t.objectStore('toc').delete(id);
 		t.objectStore('progress').delete(id);
@@ -186,6 +199,11 @@ export async function deleteBook(id, { releaseFile = false } = {}) {
 				cursor.continue();
 			}
 		};
+		const pageStore = t.objectStore('comicPages');
+		for (const ch of comicChapters) {
+			const n = ch?.pages?.length || ch?.images?.length || 0;
+			for (let p = 0; p < n; p++) pageStore.delete([id, ch.idx, p]);
+		}
 		t.oncomplete = () => {
 			if (fileHash) releaseFileIfOrphaned(db, fileHash).catch(() => {});
 			resolve(true);
@@ -245,6 +263,89 @@ export async function saveChapters(bookId, chapterList) {
 		t.oncomplete = () => resolve(true);
 		t.onerror = () => reject(t.error);
 	});
+}
+
+/**
+ * 漫画章节写入：章节记录只存每页的 { mime, w, h }，字节另存 comicPages 表。
+ * 这样打开一话 / 切下一话只需要读元信息，不再搬几十 MB 的图片数组。
+ *
+ * @param {string} bookId
+ * @param {Array<{idx:number,title:string,images:Array<{bytes:any,mime?:string,w?:number,h?:number}>,url?:string}>} chapters
+ */
+export async function saveComicChapters(bookId, chapters) {
+	const db = await openDb();
+	let saved = 0;
+
+	const delPages = async (chapterIdx, from, to) => {
+		if (from >= to) return;
+		await new Promise((resolve, reject) => {
+			const t = db.transaction('comicPages', 'readwrite');
+			const store = t.objectStore('comicPages');
+			for (let p = from; p < to; p++) store.delete([bookId, chapterIdx, p]);
+			t.oncomplete = () => resolve();
+			t.onerror = () => reject(t.error);
+		});
+	};
+
+	for (const ch of chapters) {
+		const images = ch.images || [];
+		const meta = images.map((im) => ({ mime: im.mime || 'image/jpeg', w: im.w || 0, h: im.h || 0 }));
+
+		// 重导入时页数可能变少：把旧的尾部页删掉，避免残留脏数据
+		const old = await reqValue(db.transaction('chapters').objectStore('chapters').get([bookId, ch.idx]));
+		const oldCount = old?.pages?.length || old?.images?.length || 0;
+
+		// 1) 先写页字节：每 8 页一个事务，避免单次写入过大。
+		// 顺序很重要——先写页、后写章节元信息。
+		// 旧书迁移时若中途失败，章节记录里的 images 还在，不会把书变成空的。
+		for (let i = 0; i < images.length; i += 8) {
+			await new Promise((resolve, reject) => {
+				const t = db.transaction('comicPages', 'readwrite');
+				const store = t.objectStore('comicPages');
+				for (let k = 0; k < 8 && i + k < images.length; k++) {
+					const im = images[i + k];
+					store.put({
+						bookId,
+						chapterIdx: ch.idx,
+						pageIdx: i + k,
+						mime: im.mime || 'image/jpeg',
+						w: im.w || 0,
+						h: im.h || 0,
+						bytes: im.bytes
+					});
+				}
+				t.oncomplete = () => resolve();
+				t.onerror = () => reject(t.error);
+			});
+		}
+		// 2) 章节元信息（不含字节）——这一步之后旧 images 才被替换掉
+		await new Promise((resolve, reject) => {
+			const t = db.transaction('chapters', 'readwrite');
+			t.objectStore('chapters').put({
+				bookId,
+				idx: ch.idx,
+				title: ch.title,
+				pages: meta,
+				paragraphs: undefined,
+				images: undefined,
+				totalChars: 0,
+				url: ch.url || '',
+				cachedAt: Date.now()
+			});
+			t.oncomplete = () => resolve();
+			t.onerror = () => reject(t.error);
+		});
+
+		await delPages(ch.idx, images.length, oldCount);
+		saved++;
+	}
+	return saved;
+}
+
+/** 读取漫画某一页的字节（{ bytes, mime, w, h }）；不存在返回 null */
+export async function getComicPage(bookId, chapterIdx, pageIdx) {
+	const db = await openDb();
+	return reqValue(db.transaction('comicPages').objectStore('comicPages').get([bookId, chapterIdx, pageIdx]));
 }
 
 export async function getChapter(bookId, idx) {

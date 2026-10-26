@@ -13,7 +13,7 @@
  */
 import { requestBytes, requestText } from '../core/http.js';
 import {
-	getBooks, getBook, updateBook, addBook, saveToc, saveChapters, getToc, getChapter,
+	getBooks, getBook, updateBook, addBook, saveToc, saveChapters, saveComicChapters, getToc, getChapter,
 	saveBookFile, getBookFile
 } from './db.js';
 import { parseBookFile } from '../core/importer.js';
@@ -235,13 +235,24 @@ export function comicPageCount(parsed) {
  * 漫画一章就是一组图片，单条记录可能有几十 MB，批次要小得多。
  */
 export async function saveParsedChapters(bookId, parsed) {
-	const isComic = parsed.kind === 'comic';
-	const list = parsed.chapters.map((c, idx) => (isComic
-		? { idx, title: c.title, images: c.images, url: '', totalChars: 0 }
-		: { idx, title: c.title, paragraphs: c.paragraphs, url: '', totalChars: (c.paragraphs || []).join('').length }));
-	const batch = isComic ? 3 : 80;
-	for (let i = 0; i < list.length; i += batch) {
-		await saveChapters(bookId, list.slice(i, i + batch));
+	if (parsed.kind === 'comic') {
+		// 漫画按页存：章节记录只放 w/h/mime，字节进 comicPages。
+		// 一次只交 3 话给写入层，避免把整本书的图片数组同时压在内存里。
+		const list = parsed.chapters.map((c, idx) => ({ idx, title: c.title, images: c.images, url: '' }));
+		for (let i = 0; i < list.length; i += 3) {
+			await saveComicChapters(bookId, list.slice(i, i + 3));
+		}
+		return list.length;
+	}
+	const list = parsed.chapters.map((c, idx) => ({
+		idx,
+		title: c.title,
+		paragraphs: c.paragraphs,
+		url: '',
+		totalChars: (c.paragraphs || []).join('').length
+	}));
+	for (let i = 0; i < list.length; i += 80) {
+		await saveChapters(bookId, list.slice(i, i + 80));
 	}
 	return list.length;
 }
