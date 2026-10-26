@@ -241,6 +241,9 @@ export async function renderComicReader(root, app) {
 		// 222MB 的书一话就几十 MB，旧新同时驻留是最常见的 OOM 闪退点
 		_loadingCount++;
 		clearChapterView();
+		// 让浏览器先回收上一话的图片纹理/解码缓存，再读新话（少一帧的内存重叠）
+		await nextFrame();
+		if (signal.aborted || !C || C.destroyed) return;
 
 		try {
 			// 本地漫画：章节记录里只有每页的 mime/w/h，字节按页从 comicPages 读
@@ -281,6 +284,8 @@ export async function renderComicReader(root, app) {
 	function clearChapterView() {
 		C.gen++; // 让正在进行的异步取页全部作废
 		C.chapterToken++; // 让上一话的迁移任务知道「已经切走了」
+		// 先把 img 的 src 摘掉，再移除节点：让解码后的位图尽快释放
+		if (C.strip) C.strip.querySelectorAll('img').forEach((img) => img.removeAttribute('src'));
 		revokeUrls();
 		body.innerHTML = '';
 		C.strip = null;
