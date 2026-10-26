@@ -404,11 +404,14 @@ export function showBookActions(book, app, variants = null) {
 		title: book.title,
 		build: (body, close) => {
 			const isLocal = book.sourceId === 'local';
+			const isComic = book.kind === 'comic';
 			const info = document.createElement('div');
 			info.innerHTML = `
 				<div class="setting-row"><span class="setting-label">作者</span><span class="setting-value">${escapeHtml(book.author || '未知')}</span></div>
 				<div class="setting-row"><span class="setting-label">来源</span><span class="setting-value">${escapeHtml(book.sourceName || '')}</span></div>
-				<div class="setting-row"><span class="setting-label">章节</span><span class="setting-value">${book.totalChapters || 0} 章 · 已缓存 ${book.cachedChapters || 0} 章</span></div>`;
+				<div class="setting-row"><span class="setting-label">${isComic ? '话数' : '章节'}</span><span class="setting-value">${isComic
+					? `${book.totalChapters || 0} 话 · 共 ${book.totalPages || 0} 页`
+					: `${book.totalChapters || 0} 章 · 已缓存 ${book.cachedChapters || 0} 章`}</span></div>`;
 			body.appendChild(info);
 
 			// 换源：不再要求「书架里已存在多个来源」——面板里可以现场搜索其他书源，

@@ -1,7 +1,7 @@
 {
   "name": "zhijian-reader",
   "private": true,
-  "version": "3.4.7",
+  "version": "3.5.0",
   "type": "module",
   "description": "纸间 - 静心阅读。Kindle 质感的手机小说阅读器",
   "scripts": {
@@ -34,8 +34,6 @@
     "@capacitor/app": "^7.1.2",
     "@capacitor/cli": "^7.0.0",
     "@capacitor/core": "^7.0.0",
-    "@capacitor/filesystem": "^7.0.0",
-    "@capacitor/preferences": "^7.0.0",
     "aes-js": "^3.1.2",
     "fflate": "^0.8.3",
     "js-md5": "^0.9.2",

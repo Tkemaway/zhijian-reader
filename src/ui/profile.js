@@ -159,7 +159,7 @@ export async function renderProfile(container, app) {
 		</div>
 
 		<div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-			<span>书源（${sources.filter((s) => s.enabled !== false).length} 个启用${sources.some((s) => s.kind === 'comic') ? ` · ${sources.filter((s) => s.kind === 'comic').length} 个漫画` : ''}）</span>
+			<span>书源（${sources.filter((s) => s.enabled !== false).length} 个启用）</span>
 			<button class="btn btn-soft btn-sm" id="add-source" style="margin-bottom:8px">添加</button>
 		</div>
 		<div class="card" id="source-list"></div>
@@ -426,13 +426,12 @@ export async function renderProfile(container, app) {
 		const row = document.createElement('div');
 		row.className = 'setting-row';
 		const isFanqieApp = s.type === 'fanqie-app';
-		const kindTag = s.kind === 'comic' ? '<span class="src-tag">漫画</span>' : '';
 		const hint = isFanqieApp
 			? 'APP 协议源 · 全本直连（实验性）'
 			: `${s.type === 'legado' ? '阅读系规则' : 'SoNovel 规则'}${s.scripted ? ' · 含脚本/登录验证' : ''} · ${escapeHtml(s.url)}`;
 		row.innerHTML = `
 			<div style="min-width:0">
-				<div class="setting-label">${escapeHtml(s.name)} ${kindTag}${s.custom ? '<span class="src-tag src-tag-custom">自定义</span>' : ''}</div>
+				<div class="setting-label">${escapeHtml(s.name)} ${s.custom ? '<span class="src-tag src-tag-custom">自定义</span>' : ''}</div>
 				<div class="setting-hint" style="word-break:break-all">${hint}</div>
 			</div>
 			${isFanqieApp ? '<button class="btn btn-soft btn-sm" style="margin-right:10px">自检</button>' : ''}
@@ -471,7 +470,7 @@ export async function renderProfile(container, app) {
 
 /**
  * 添加书源（Legado JSON）
- * 漫画源靠 bookSourceType=2 自动识别；普通小说源留空即可
+ * App 只使用小说源；漫画源请留给 PC 下载器，导入 CBZ 后离线阅读
  */
 function showAddSourcePanel(app) {
 	showSheet({
@@ -480,11 +479,11 @@ function showAddSourcePanel(app) {
 			const hint = document.createElement('p');
 			hint.className = 'setting-hint';
 			hint.style.cssText = 'line-height:1.75;margin-bottom:12px';
-			hint.innerHTML = '粘贴 <b>Legado（阅读 3.0）书源</b> 的 JSON（单条或数组），或直接粘贴 <b>JSON 文件网址</b>（http 开头）。<br>漫画源会带 <code>bookSourceType: 2</code>，添加后自动归到「漫画」分类。';
+			hint.innerHTML = '粘贴 <b>Legado（阅读 3.0）书源</b> 的 JSON（单条或数组），或直接粘贴 <b>JSON 文件网址</b>（http 开头）。<br>仅支持小说源；<b>漫画源</b>不适用（App 的漫画只读本地导入的 EPUB / CBZ）。';
 			body.appendChild(hint);
 
 			const ta = document.createElement('textarea');
-			ta.placeholder = '{ "bookSourceName": "…", "bookSourceUrl": "…", "bookSourceType": 2, … }';
+			ta.placeholder = '{ "bookSourceName": "…", "bookSourceUrl": "…", "ruleSearch": { … }, … }';
 			ta.style.cssText = 'width:100%;box-sizing:border-box;height:180px;border:1px solid var(--line);border-radius:10px;padding:12px;font:inherit;font-size:12px;line-height:1.6;background:var(--elev-2);color:var(--ink);resize:vertical';
 			body.appendChild(ta);
 
@@ -523,7 +522,11 @@ function showAddSourcePanel(app) {
 						return;
 					}
 					const scripted = (r.addedList || []).filter((s) => s.scripted).length;
+					const comics = (r.addedList || []).filter((s) => s.kind === 'comic').length;
 					toast(`已添加 ${r.added} 个书源${r.skipped ? `（${r.skipped} 个已存在）` : ''}`, 2400);
+					if (comics) {
+						setTimeout(() => toast(`其中 ${comics} 个是漫画源，App 内不使用（漫画请用本地导入）`, 3600), 700);
+					}
 					close();
 					app.refresh();
 					if (scripted) {

@@ -215,6 +215,12 @@
 	font-size: 13px;
 	line-height: 1.7;
 }
+.comic-empty p span {
+	display: inline-block;
+	margin-top: 6px;
+	font-size: 12px;
+	opacity: 0.6;
+}
 .comic-empty .btn,
 .comic-error .btn {
 	background: rgba(255, 255, 255, 0.12);

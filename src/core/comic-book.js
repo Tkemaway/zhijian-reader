@@ -299,26 +299,6 @@ export function parseCbz(buffer, filename = '') {
 	};
 }
 
-/** 是否是漫画容器（按扩展名/魔数） */
-export function looksLikeComicFile(filename, buffer) {
-	if (/\.(cbz|cbr)$/i.test(String(filename || ''))) return true;
-	if (/\.(epub|zip)$/i.test(String(filename || ''))) return false; // EPUB 由调用方先试文字解析
-	return false;
-}
-
-/** 统计一本漫画的页数与字节数（导入提示 / 书架展示用） */
-export function comicStats(parsed) {
-	let pages = 0;
-	let bytes = 0;
-	for (const ch of parsed.chapters || []) {
-		for (const img of ch.images || []) {
-			pages++;
-			bytes += img.bytes?.length || 0;
-		}
-	}
-	return { pages, bytes, chapters: parsed.chapters?.length || 0 };
-}
-
 /**
  * 判断一本 EPUB 是不是漫画。
  *

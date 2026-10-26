@@ -163,4 +163,3 @@ export function install() {
   };
 }
 
-export function reset(name = 'zhijian') { databases.delete(name); }

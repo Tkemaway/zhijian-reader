@@ -785,8 +785,6 @@ body.ink-mode .sel-bar { background: #fbfaf7; backdrop-filter: none; }
 	flex-shrink: 0;
 	margin-left: 6px;
 }
-/* 漫画结果的标记：和「直达」区分开 */
-.rr-tag-comic { background: rgba(168, 118, 62, 0.14); color: #a8763e; }
 /* 书源列表里的小标签 */
 .src-tag {
 	display: inline-block;

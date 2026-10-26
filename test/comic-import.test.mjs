@@ -24,7 +24,6 @@ globalThis.localStorage = {
 
 const db = await import(id('store/db.js'));
 const bf = await import(id('store/book-files.js'));
-const cc = await import(id('core/comic-cache.js'));
 
 let pass = 0, fail = 0;
 const check = (name, cond, extra = '') => {
@@ -84,8 +83,8 @@ check('图片字节非空', ch0?.images?.[0]?.bytes?.length > 50, String(ch0?.im
 check('图片 mime', ch0?.images?.[0]?.mime === 'image/png', ch0?.images?.[0]?.mime);
 check('没有多余的段落字段', !ch0?.paragraphs?.length);
 
-const images = await cc.getComicChapterImages(book, null, 0, toc[0]);
-check('本地书直接读缓存图片', images.length === 2);
+const images = (await db.getChapter(book.id, 0))?.images || [];
+check('本地书直接读章节图片', images.length === 2);
 
 console.log('== 同文件重复导入不新增书 ==');
 const before = (await db.getBooks()).length;

@@ -21,7 +21,7 @@ import { searchSource, fetchToc, fetchComicChapter, detectBlockPage } from '../.
 import { requestText, requestBytes } from '../../src/core/http.js';
 import { parseSourceInput } from '../../src/core/custom-sources.js';
 import { packComicFolder } from '../../scripts/pack-comic.mjs';
-import { scanHtml, sanitizeSegment, pickTitle } from './scan.mjs';
+import { scanHtml, sanitizeSegment } from './scan.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');

@@ -4,7 +4,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
-import { DOMParser } from 'linkedom';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const id = (p) => pathToFileURL(path.join(__dirname, '..', p)).href;

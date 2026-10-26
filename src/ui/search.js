@@ -15,12 +15,7 @@ export function renderSearch(container, app) {
 	container.innerHTML = `
 		<div class="page-title">书海</div>
 		<div class="page-subtitle" id="src-count"></div>
-		<div class="shelf-chips" id="kind-chips" style="margin:0 0 10px">
-			<button class="chip" data-kind="text">小说</button>
-			<button class="chip" data-kind="comic">漫画</button>
-		</div>
-		<div class="setting-hint" id="kind-hint" style="margin:0 2px 12px;line-height:1.7"></div>
-		<div class="search-bar">
+		<div class="search-bar" style="margin-top:14px">
 			${icon('search', 18)}
 			<input id="q" type="search" placeholder="搜书名或作者" enterkeyhint="search" autocomplete="off" />
 			<button class="search-clear" id="q-clear" style="display:none">×</button>
@@ -34,38 +29,9 @@ export function renderSearch(container, app) {
 	const hint = container.querySelector('#search-hint');
 	const results = container.querySelector('#results');
 
-	// 小说 / 漫画分开搜：漫画源的内容规则和小说源完全不同，混着搜只会浪费时间
-	const enabledCount = (kind) => sources.filter((s) => s.enabled !== false && (kind === 'comic' ? s.kind === 'comic' : s.kind !== 'comic')).length;
-	const comicCount = enabledCount('comic');
-	const textCount = enabledCount('text');
-	let activeKind = comicCount && !textCount ? 'comic' : 'text';
+	// 书海只搜小说源：漫画不再走在线书源，改为本地导入（PC 下载器导出 CBZ）
 	const srcCount = container.querySelector('#src-count');
-	const kindHint = container.querySelector('#kind-hint');
-	const refreshSubtitle = () => {
-		const n = enabledCount(activeKind);
-		srcCount.textContent = `${n} 个${activeKind === 'comic' ? '漫画' : '小说'}源为你待命`;
-		// 没有漫画源时别让「漫画」变成死路：直接告诉用户去哪里加
-		kindHint.textContent = activeKind === 'comic' && !n
-			? '还没有漫画源。内置源都是小说站，请到「我的 → 书源 → 添加」粘贴 Legado 漫画书源（bookSourceType: 2）'
-			: '';
-	};
-	const kindChips = container.querySelector('#kind-chips');
-	if (kindChips) {
-		const paint = () => kindChips.querySelectorAll('.chip').forEach((c) => c.classList.toggle('is-on', c.dataset.kind === activeKind));
-		paint();
-		kindChips.querySelectorAll('.chip').forEach((chip) => {
-			chip.addEventListener('click', () => {
-				if (searching) return;
-				activeKind = chip.dataset.kind;
-				paint();
-				refreshSubtitle();
-				results.innerHTML = '';
-				hint.innerHTML = '';
-				renderHistory(results, input, app);
-			});
-		});
-	}
-	refreshSubtitle();
+	srcCount.textContent = `${sources.filter((s) => s.enabled !== false).length} 个书源为你待命`;
 
 	// 搜索历史
 	renderHistory(results, input, app);
@@ -93,9 +59,9 @@ export function renderSearch(container, app) {
 		results.innerHTML = '';
 		hint.innerHTML = '';
 
-		const enabled = sources.filter((s) => s.enabled !== false && (activeKind === 'comic' ? s.kind === 'comic' : s.kind !== 'comic'));
+		const enabled = sources.filter((s) => s.enabled !== false);
 		if (!enabled.length) {
-			hint.textContent = activeKind === 'comic' ? '还没有漫画源，先到「我的 → 书源」添加' : '没有启用的书源';
+			hint.textContent = '没有启用的书源';
 			searching = false;
 			return;
 		}
@@ -229,7 +195,7 @@ function resultRow(r, app, keyword) {
 	el.className = 'result-row';
 	el.innerHTML = `
 		<div class="rr-main">
-			<div class="rr-title">${escapeHtml(r.bookName)}${r.directHit ? '<span class="rr-tag">直达</span>' : ''}${sources.find((s) => s.id === r.sourceId)?.kind === 'comic' ? '<span class="rr-tag rr-tag-comic">漫画</span>' : ''}</div>
+			<div class="rr-title">${escapeHtml(r.bookName)}${r.directHit ? '<span class="rr-tag">直达</span>' : ''}</div>
 			<div class="rr-meta">
 				${r.author ? `<span>${escapeHtml(r.author.replace(/^作者[:：]\s*/, ''))}</span>` : ''}
 				${r.latestChapter ? `<span class="rr-latest">${escapeHtml(r.latestChapter.slice(0, 24))}</span>` : ''}
@@ -285,30 +251,21 @@ async function startJoin(r, app, rowEl) {
 		const total = toc.chapters.length;
 		const isFanqie = source.type === 'fanqie';
 		const freeCount = isFanqie ? toc.chapters.filter((c) => !c.locked).length : 0;
-		const isComic = source.kind === 'comic';
 		const choice = await showDialog({
 			title: `加入书架`,
 			text: isFanqie
 				? `《${r.bookName}》共 ${total} 章（番茄官方免费 ${freeCount} 章）\n其余章节为试读片段，需在番茄 App 内阅读`
-				: isComic
-					? `《${r.bookName}》共 ${total} 话\n漫画按话缓存图片，建议先缓存 3 话试读`
-					: `《${r.bookName}》共 ${total} 章\n选择缓存范围（可随时继续缓存）`,
+				: `《${r.bookName}》共 ${total} 章\n选择缓存范围（可随时继续缓存）`,
 			actions: isFanqie
 				? [
 					{ label: `缓存免费章节（${freeCount} 章）`, kind: 'primary', value: 1 },
 					{ label: `只入架，不缓存`, kind: 'soft', value: 0 }
 				]
-				: isComic
-					? [
-						{ label: `先缓存前 3 话`, kind: 'primary', value: 3 },
-						{ label: `缓存全部 ${total} 话（较慢）`, kind: 'soft', value: total },
-						{ label: `只入架，不缓存`, kind: 'soft', value: 0 }
-					]
-					: [
-						{ label: `先缓存前 50 章（快速开读）`, kind: 'primary', value: 50 },
-						{ label: `缓存全书 ${total} 章（较慢）`, kind: 'soft', value: total },
-						{ label: `只入架，不缓存`, kind: 'soft', value: 0 }
-					]
+				: [
+					{ label: `先缓存前 50 章（快速开读）`, kind: 'primary', value: 50 },
+					{ label: `缓存全书 ${total} 章（较慢）`, kind: 'soft', value: total },
+					{ label: `只入架，不缓存`, kind: 'soft', value: 0 }
+				]
 		});
 		if (choice === -1) {
 			btn.disabled = false;
@@ -325,7 +282,6 @@ async function startJoin(r, app, rowEl) {
 			coverStyle: coverGradient(r.bookName),
 			sourceId: source.id,
 			sourceName: source.name,
-			kind: source.kind === 'comic' ? 'comic' : '',
 			bookUrl: r.bookUrl,
 			tocUrl: toc.tocUrl,
 			totalChapters: total,
@@ -349,7 +305,7 @@ async function startJoin(r, app, rowEl) {
 		const count = isFanqie
 			? Math.max(1, toc.chapters.reduce((mx, c, i) => (c.locked ? mx : i + 1), 0))
 			: Math.min(choice, total);
-		const unit = source.kind === 'comic' ? '话' : '章';
+		const unit = '章';
 		btn.textContent = `缓存 0/${count}${unit}`;
 		const job = await downloadBook({ ...book, ...saved, id: realId }, {
 			target: count,

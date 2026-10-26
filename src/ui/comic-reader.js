@@ -4,16 +4,12 @@
  * 与文字阅读器分开实现：漫画的「内容」是图片字节，排版、翻页、
  * 进度、预加载的规则都不一样；共用的是路由、返回键、进度表和同步。
  *
- * 图片来源三种：
- *   1. 本地导入（EPUB/CBZ）→ 章节记录里直接有图片字节
- *   2. 在线漫画、上一轮已缓存 → 同上
- *   3. 在线漫画、尚未缓存 → 解析章节页拿图片地址 → 并发下载 → 回写缓存
+ * 图片来源只有一种：本地导入（EPUB / CBZ / ZIP）后，
+ * 章节记录里直接存着图片字节。App 不再支持在线漫画，
+ * 在线下载请用 PC 上的 tools/comic-downloader，导出 CBZ 再导入。
  */
 import './comic-reader.css';
-import sources from '../core/sources.js';
-import { fetchToc } from '../core/engine.js';
-import { getComicChapterImages } from '../core/comic-cache.js';
-import { getToc, saveToc, saveProgress, updateBook } from '../store/db.js';
+import { getToc, getChapter, saveProgress, updateBook } from '../store/db.js';
 import { addReadingSeconds } from '../store/stats.js';
 import { keepAwake } from '../store/wakelock.js';
 import { scheduleSyncAfterRead } from '../store/sync.js';
@@ -53,33 +49,19 @@ export async function renderComicReader(root, app) {
 	el.className = 'reader comic-reader';
 	root.appendChild(el);
 	el.innerHTML = '<div class="comic-loading show"><span class="comic-spinner"></span><em>正在打开…</em></div>';
-	// 先挂一个最小会话：拉目录期间用户按返回键也能正常退出，
+	// 先挂一个最小会话：读目录期间用户按返回键也能正常退出，
 	// 否则 closeReaderView 找不到会话会直接退出 App
 	C = { app, book, toc: [], idx: 0, el, destroyed: false, controller: new AbortController(), urls: [] };
 	// 退出动画期间元素还连着 DOM，但会话已经销毁 —— 用这个判断避免「关掉后又弹回来」
 	const alive = () => el.isConnected && !el.classList.contains('leaving');
 
-	let toc = (await getToc(book.id)) || [];
+	const toc = (await getToc(book.id)) || [];
 	if (!alive()) return;
-	const source = sources.find((s) => s.id === book.sourceId);
-	// 同步过来的在线漫画：本机还没有目录，先拉一次
-	if (!toc.length && source && (book.tocUrl || book.bookUrl)) {
-		el.innerHTML = '<div class="comic-loading show"><span class="comic-spinner"></span><em>正在获取漫画目录…</em></div>';
-		try {
-			const fetched = await fetchToc(source, book, DOMParser);
-			if (fetched?.chapters?.length) {
-				toc = fetched.chapters;
-				await saveToc(book.id, toc);
-				updateBook(book.id, { totalChapters: toc.length, tocUrl: fetched.tocUrl || book.tocUrl }).catch(() => {});
-			}
-		} catch { /* 下面给空目录提示 */ }
-		if (!alive()) return;
-	}
 
 	if (!toc.length) {
 		el.innerHTML = `
 			<div class="comic-empty">
-				<p>这本漫画还没有目录</p>
+				<p>这本漫画没有可读内容<br><span>请重新导入 EPUB / CBZ 文件</span></p>
 				<button class="btn btn-soft btn-sm" id="comic-empty-back">返回</button>
 			</div>`;
 		el.querySelector('#comic-empty-back').onclick = () => closeComicView();
@@ -122,7 +104,6 @@ export async function renderComicReader(root, app) {
 	C = {
 		app,
 		book,
-		source,
 		toc,
 		idx: startIdx,
 		mode,
@@ -239,11 +220,11 @@ export async function renderComicReader(root, app) {
 		nextBtn.disabled = idx >= C.toc.length - 1;
 
 		try {
-			const images = await getComicChapterImages(book, source, idx, C.toc[idx], {
-				signal,
-				onStage: showLoading
-			});
-			if (!C || C.destroyed) return;
+			// 本地漫画：一话 = 一条章节记录里的图片字节，直接读库即可
+			const chapter = await getChapter(book.id, idx);
+			if (signal.aborted || !C || C.destroyed) return;
+			const images = chapter?.images || [];
+			if (!images.length) throw new Error('这一话没有图片，文件可能导入不完整');
 			C.pages = images;
 			C.page = position === 'end' ? images.length - 1 : position === 'start' ? 0 : Math.min(pageIdx, images.length - 1);
 			buildStrip();
