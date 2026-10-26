@@ -571,6 +571,29 @@ async function handle(req, res) {
 		}
 	}
 
+	// 内置漫画书源：下载器自带一份，开箱即可搜索，不必手动粘 JSON
+	if (p === '/api/sources/builtin' && req.method === 'GET') {
+		try {
+			const file = path.join(__dirname, 'builtin-sources.json');
+			const text = fs.readFileSync(file, 'utf8');
+			const parsed = parseSourceInput(text);
+			if (parsed.error) return json(res, 500, { error: '内置源解析失败：' + parsed.error });
+			return json(res, 200, {
+				sources: parsed.list.map((s) => ({
+					id: s.id,
+					name: s.name,
+					url: s.url,
+					kind: s.kind,
+					scripted: !!s.scripted,
+					source: s
+				})),
+				total: parsed.list.length
+			});
+		} catch (e) {
+			return json(res, 500, { error: '内置源读取失败：' + (e.message || e) });
+		}
+	}
+
 	if (p === '/api/source' && req.method === 'POST') {
 		try {
 			const body = await readJson(req);

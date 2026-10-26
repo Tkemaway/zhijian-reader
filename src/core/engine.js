@@ -4,6 +4,7 @@
  */
 import * as sonovel from './source-sonovel.js';
 import * as legado from './source-legado.js';
+import { extractLegado, runLegadoJs } from './legado.js';
 import { requestText, sleep, randomInterval, tryFixMojibake } from './http.js';
 import { cleanChapterContent, htmlToParagraphs, cleanChapterTitle, cleanInvisibleChars } from './filter.js';
 import { extractFanqieId, parseFanqieToc, parseFanqieChapter, fanqieHeaders } from './fanqie.js';
@@ -76,7 +77,16 @@ export async function searchSource(source, keyword, DOMParserImpl) {
 	const adapter = getAdapter(source);
 	try {
 		const req = adapter.buildSearchRequest(source, keyword);
-		if (!req) return { results: [], error: '该书源不支持搜索' };
+		if (!req) {
+			// 区分「本来就没有搜索规则」和「搜索地址要靠执行 JS 才能算出来」：
+			// 后者是声明式规则的边界（不少站点把 searchUrl 整个写成一段 JS），
+			// 直接说清楚原因，别让用户对着「不支持搜索」以为是 App 坏了。
+			const rawSearch = String(source.searchUrl || '');
+			if (/<js>|@js:|javascript:|eval\(/i.test(rawSearch) || (!rawSearch && source.ruleSearch?.bookList)) {
+				return { results: [], error: '该源的搜索地址需执行脚本，本地规则引擎无法解析（可改用「链接下载」）' };
+			}
+			return { results: [], error: '该书源不支持搜索' };
+		}
 
 		const { text, finalUrl } = await robustRequest(req.url, {
 			method: req.method,
@@ -368,8 +378,23 @@ export function refererHeaders(source) {
 //  漫画书源
 // ============================================================
 
-/** 站点装饰图（logo/广告/图标/占位图）——不要当成漫画页 */
-const BAD_IMAGE_RE = /(logo|banner|advert|ads?[-_/]|ad[-_/]|icon|avatar|qrcode|qr[-_]?code|placeholder|loading|lazy[-_]?load|spacer|blank|pixel|captcha|share|btn|button|sprite)/i;
+/**
+ * 站点装饰图（logo/广告/图标/占位图）——不要当成漫画页
+ *
+ * ⚠️ 这里必须只认「**整段**路径分段是广告词」的情况。
+ * 早先的写法允许 ads?[-_/]，于是 `/uploads/0001/1.jpg` 里的 `ads/`
+ * 被当成广告图，导致使用 uploads/ 目录的站点（如漫画DB 系）整站图片
+ * 全被丢弃——表现为「这一话没有解析到图片」，很难查。
+ * 现在改为：词边界 + 必须整段匹配（前后是分隔符或结尾）。
+ */
+const BAD_IMAGE_RE = new RegExp(
+	'(^|[/_.\\-])(?:' + [
+		'logo', 'banner', 'advert', 'advertisement', 'ads', 'adv',
+		'icon', 'avatar', 'qrcode', 'placeholder', 'loading', 'lazy[-_]?load',
+		'spacer', 'blank', 'pixel', 'captcha', 'share', 'btn', 'button', 'sprite'
+	].join('|') + ')([/_.\\-]|$)',
+	'i'
+);
 
 /** 从 <img> 上挑出真实地址（兼容懒加载属性） */
 function pickImageUrl(img, baseUrl) {
@@ -443,6 +468,71 @@ export function collectComicImages(htmlOrDoc, baseUrl, source, DOMParserImpl) {
 }
 
 /**
+ * 把「规则直接产出的文本」解析成图片地址列表。
+ *
+ * 为什么需要这条通道：一部分站点的图片地址不在 HTML 的 <img> 里，
+ * 而是藏在脚本变量/接口响应里（常见形态：base64 后的 JSON 数组、
+ * 一行一个 URL、或者 JSON 数组本身）。这类站点没法靠「圈容器再扫 img」
+ * 表达，只能让书源用一条 @js 规则把它算出来。
+ *
+ * 接受三种写法：
+ *   1. 每行一个地址
+ *   2. JSON 数组（元素是字符串，或 {url|src|img} 对象）
+ *   3. 已经拼好的 <img src="..."> HTML 片段（交给 collectComicImages 再抽一遍）
+ */
+export function parseImageUrlList(text, baseUrl, source, DOMParserImpl) {
+	if (!text) return [];
+	const raw = String(text).trim();
+	if (!raw) return [];
+
+	let candidates = [];
+
+	// 形态 3：HTML 片段（必须有 DOMParser 才能解析）
+	if (/<img[\s>]/i.test(raw) && DOMParserImpl) {
+		return collectComicImages(raw, baseUrl, source, DOMParserImpl);
+	}
+
+	// 形态 2：JSON 数组
+	if (raw.startsWith('[') || raw.startsWith('{')) {
+		try {
+			const data = JSON.parse(raw);
+			const arr = Array.isArray(data) ? data : [data];
+			candidates = arr
+				.map((it) => (typeof it === 'string' ? it : it && (it.url || it.src || it.img || it.href || it.path)))
+				.filter((v) => typeof v === 'string' && v);
+		} catch { /* 不是 JSON 就当行列表处理 */ }
+	}
+
+	// 形态 1：按行 / 逗号分隔
+	if (!candidates.length) {
+		candidates = raw.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean);
+		// 单行但含多个地址（空格或逗号分隔）
+		if (candidates.length === 1 && /[, ]/.test(candidates[0]) && !/^https?:\/\/[^\s,]+$/.test(candidates[0])) {
+			candidates = candidates[0].split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+		}
+	}
+
+	const out = [];
+	const seen = new Set();
+	for (const c of candidates) {
+		let abs = c;
+		if (!/^https?:\/\//i.test(abs)) {
+			if (/^\/\//.test(abs)) abs = 'https:' + abs;
+			else {
+				try { abs = new URL(abs, baseUrl).href; } catch { continue; }
+			}
+		}
+		if (!/^https?:\/\//i.test(abs)) continue;
+		if (seen.has(abs)) continue;
+		// 复用装饰图过滤（logo/图标/广告等）
+		if (!isUsableImage(abs, null, source)) continue;
+		seen.add(abs);
+		out.push(abs);
+	}
+	return out;
+}
+
+/**
  * 获取漫画一话的图片地址列表
  * 优先用书源的内容规则圈定范围（避免把页面上的 logo / 推荐位当成漫画页）
  */
@@ -454,15 +544,34 @@ export async function fetchComicChapter(source, chapterUrl, DOMParserImpl, { sig
 		const parser = new DOMParserImpl();
 		let urls = [];
 
-		// 1) 先按内容规则取正文 HTML，再从中找图
-		try {
-			const parsed = getAdapter(source).parseChapter(resp.text, resp.finalUrl, source, DOMParserImpl);
-			if (parsed?.contentHtml) {
-				urls = collectComicImages(parsed.contentHtml, resp.finalUrl, source, DOMParserImpl);
-			}
-		} catch { /* 规则不匹配就走整页 */ }
+		// 1) 书源显式声明了 comicImageUrl 规则 → 优先用它直接算地址列表
+		//    （图片藏在脚本变量/接口响应里的站点走这条路，扫 <img> 是找不到的）
+		const explicitRule = source.comicImageUrl || source.ruleContent?.comicImageUrl;
+		if (explicitRule) {
+			try {
+				const ruleText = String(explicitRule);
+				let produced = '';
+				if (ruleText.startsWith('@js:')) {
+					// 纯 JS 规则：直接在整页 HTML 上跑（不依赖 DOM 规则）
+					produced = runLegadoJs(resp.text, ruleText.slice(4), { baseUrl: resp.finalUrl, book: source });
+				} else {
+					produced = extractLegado(ruleText, parser, { baseUrl: resp.finalUrl, book: source, html: resp.text });
+				}
+				urls = parseImageUrlList(produced, resp.finalUrl, source, DOMParserImpl);
+			} catch { /* 规则写错时回落到下面的通用路径 */ }
+		}
 
-		// 2) 规则没圈到图 → 整页扫（再过滤装饰图）
+		// 2) 先按内容规则取正文 HTML，再从中找图
+		if (!urls.length) {
+			try {
+				const parsed = getAdapter(source).parseChapter(resp.text, resp.finalUrl, source, DOMParserImpl);
+				if (parsed?.contentHtml) {
+					urls = collectComicImages(parsed.contentHtml, resp.finalUrl, source, DOMParserImpl);
+				}
+			} catch { /* 规则不匹配就走整页 */ }
+		}
+
+		// 3) 规则没圈到图 → 整页扫（再过滤装饰图）
 		if (!urls.length) {
 			urls = collectComicImages(resp.text, resp.finalUrl, source, DOMParserImpl);
 		}

@@ -1,0 +1,1170 @@
+[
+ {
+  "bookSourceName": "🥝猕猴桃漫画",
+  "bookSourceUrl": "https://www.mwwz.cc",
+  "bookSourceType": 2,
+  "bookSourceGroup": "自制,漫画",
+  "searchUrl": "{{Url()}}/api/search?keyword={{key}}&type=mh&page={{page}}&pageSize=20",
+  "ruleSearch": {
+   "author": "$.author",
+   "bookList": "$.data.list[*]",
+   "bookUrl": "{{Url()}}/api/comic/{{$.id}}",
+   "coverUrl": "$.cover\n@js:\nconst imageSourceUrl = JSON.parse(source.getVariable()).imageSourceUrl;\nimageSourceUrl ? result.replace(/^[^\\/]+\\/\\/[^\\/]+/, imageSourceUrl) : result;",
+   "intro": "$.description",
+   "kind": "@js:var $ = result;\n$.tags + ',' + java.timeFormat($.editTime * 1000);",
+   "name": "$.title"
+  },
+  "ruleBookInfo": {
+   "author": "$.author",
+   "coverUrl": "$.cover\n@js:\nconst imageSourceUrl = JSON.parse(source.getVariable()).imageSourceUrl;\nimageSourceUrl ? result.replace(/^[^\\/]+\\/\\/[^\\/]+/, imageSourceUrl) : result;",
+   "init": "$.data",
+   "intro": "@js:\nconst config = JSON.parse(source.getVariable());\nconst $ = result;\n`&nbsp;&nbsp;当前站源：${config.sourceurl}\n当前线路：${config.imageSourceUrl || '默认线路'}\n上架时间：${java.timeFormat($.createTime * 1000)}\n更新时间：${java.timeFormat($.editTime * 1000)}\n简介：\n${$.intro}`;",
+   "kind": "@js:var $ = result;\n$.tags + ',' + java.timeFormat($.editTime * 1000);",
+   "name": "$.title",
+   "tocUrl": "{{Url()}}/comic/{{$.id}}"
+  },
+  "ruleToc": {
+   "chapterList": "#chapter-grid-container a",
+   "chapterName": "[class$=\"name\"]@text",
+   "chapterUrl": "href##(\\d+)$##/api/comic/image/$1?page=1###",
+   "preUpdateJs": "const sourceUL = Url();\nif (!String(book.bookUrl).includes(sourceUL)) {\n  book.bookUrl = String(book.bookUrl).replace(/https?:\\/\\/[^\\/]+/,sourceUL);\n  book.tocUrl = String(book.tocUrl).replace(/https?:\\/\\/[^\\/]+/,sourceUL);\n  java.toast(\"\\n检测到切换源站，已更新目录链接。\");\n   java.refreshTocUrl();\n}",
+   "updateTime": "span@text##\\n##|"
+  },
+  "ruleContent": {
+   "content": "@js:\nconst imglist = JSON.parse(src).data.images;\nconst imageSourceUrl = JSON.parse(source.getVariable()).imageSourceUrl;\nimglist.map(x => `<img src=\"${imageSourceUrl ? x.url.replace(/^[^\\/]+\\/\\/[^\\/]+/, imageSourceUrl) : x.url}\">`).join('\\n');",
+   "imageDecode": "(() => {\n    const isImage = (result[0] === 0xFF && result[1] === 0xD8) ||\n        (result[0] === 0x89 && result[1] === 0x50) ||\n        (result[0] === 0x47 && result[1] === 0x49) ||\n        (result[0] === 0x52 && result[1] === 0x49);\n    if (isImage) return result;\n    const iv = result.slice(0, 16);\n    const ciphertext = result.slice(16);\n    const key = java.strToBytes('0B6666A0-BB59-1381-B746-a0E4C9AC');\n    const cipher = java.createSymmetricCrypto(\"AES/CBC/PKCS5Padding\", key, iv);\n    return cipher.decrypt(ciphertext);\n})();",
+   "imageStyle": "FULL",
+   "nextContentUrl": "@js:\nconst pageList = [];\nconst Data = JSON.parse(src).data.pagination;\nconst page = Math.ceil(Data.total / Data.page_size);\nfor (let i = 2;i <= page;i++) {\npageList.push(baseUrl.replace(\"page=1\",`page=${i}`));\n}\npageList;"
+  },
+  "header": "@js:\nJSON.stringify({\"User-Agent\":\"Mozilla/5.0 (Linux; Android 9) Mobile Safari/537.36\",\"Referer\": Url()});",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "🎨禁漫天堂[国内]",
+  "bookSourceUrl": "https://jmcomicgo.me",
+  "bookSourceType": 2,
+  "bookSourceGroup": "寿横大佬最新力作",
+  "searchUrl": "{{Get('urls')[0]}}/search/photos?search_query={{key}}&search-type=photos&main_tag=0&page={{page}}",
+  "ruleSearch": {
+   "author": "@js:\nif (baseUrl.match(/novel/)){\n\t//小说\ntext=java.getString('.title-truncate.2@text');\n}else {\n\t//漫画\ntext=java.getString('.title-truncate.1@text');\n}\ntext;",
+   "bookList": "@js:\nvar list\nif(baseUrl.match(/favorite/)){\nlist=java.getElements('div.col-xs-3');\n} else if(!baseUrl.match(/album\\/\\d+/)) {\nlist=java.getElements('class.p-b-15');\n}\nlist;",
+   "bookUrl": "tag.a.0@href",
+   "coverUrl": "img@data-original||img@src",
+   "intro": ".video-title@text",
+   "kind": "{{@@class.tag@text}}",
+   "lastChapter": "@js:\nif (baseUrl.match(/novel/)){\n\t//小说\ntext=java.getString('.title-truncate.1@text');\n}else {\n\t//漫画\ntext=java.getString('');\n}\ntext;",
+   "name": "@js:\nif (baseUrl.match(/novel_watchlist/)){\ntext=java.getString('.title-truncate@text');\n} else if (baseUrl.match(/favorite/)){\ntext=java.getString('.image-item-text@text');\n}else {\ntext=java.getString('.video-title@text');\n}\ntext;",
+   "wordCount": "{{@@span.0@text##^##👍🏻 }}"
+  },
+  "ruleBookInfo": {
+   "author": "@js:\nif (baseUrl.match(/novel/)){\n\t//小说\ntext=java.getString('.p-t-5 li a@text');\n}else {\n\t//漫画\ntext=java.getString('a.web-author-tag:nth-of-type(1)@text');\n}\ntext;",
+   "coverUrl": "class.thumb-overlay.2@img@src",
+   "init": "<js>\nurl = baseUrl\nnum = baseUrl.includes(\"novel\") ? 1 : 2;\njava.put(\"btype\",num);\nif(num == 2){\njmBookId = baseUrl.match(/album\\/(\\d+)/)[1];\njava.put(\"jmBookId\", jmBookId);\n} \nresult\n</js>",
+   "intro": "{{\"\\n\"}}\n&nbsp;{{@@class.train-number@text}}{{@@class.novel-cover@class.list-unstyled.0@li.0@html}}\n👍🏻{{@@class.list-style-none.d-inline-block p-r-15.-2@html}}{{@@class.novel-cover@class.list-unstyled.0@ul@li.0@html}}&nbsp;&nbsp;👁️{{@@class.list-style-none.d-inline-block p-r-15.-1@html}}{{@@class.novel-cover@class.list-unstyled.0@ul@li.1@html}}\n{{@@class.intro-collapse-content@text}}\n{{@@class.p-t-5 float-left@text##日期}}    {{@@class.p-t-5 float-right@text##日期}}\n{{@@div.p-t-5:nth-of-type(9)@text}}\n{{@@h2.p-t-5.0@text##叙述：}}",
+   "kind": "@js:\nif (baseUrl.match(/novel/)){\n\t//小说\ntext=java.getString('span[data-type=tags]@a@text');\n}else {\n\t//漫画\ntext=java.getString('#intro-block@[data-type=tags]@a@text');\n}\ntext;",
+   "name": "{{@@h1@text}}",
+   "tocUrl": "baseUrl",
+   "wordCount": "{{@@class.col-lg-7@div.1@div.p-t-5:nth-of-type(1)@text}}{{@@class.novel-cover@class.list-unstyled.0@li.0@text}}"
+  },
+  "ruleToc": {
+   "chapterList": "class.btn-toolbar.0@tag.a||.reading\n<js>\nlet type = +(java.get('btype'))\nswitch (type) {\n  case 1:\n    book.type = 8;\n    break;\n  case 2:\n    book.type = 64;\n}\n\nresult\n</js>",
+   "chapterName": "text",
+   "chapterUrl": "href\n@js:\nresult += \"/?shunt=\" + nums[Get('shunt')]",
+   "preUpdateJs": "java.refreshTocUrl()",
+   "updateTime": "span@text"
+  },
+  "ruleContent": {
+   "callBackJs": "switch (event) {\n    case \"clickCustomButton\":\n        const bookId = book.getVariable(\"jmBookId\");\n        if (!bookId) {\n            java.longToast(\"暂无关联书籍\");\n            break;\n        }\n        const body = \"video_id=\" + bookId + \"&page=1&series=1&with_ad_wcm=1\";\n        const request = java.post(Get('urls')[0] + '/ajax/album_pagination', body, {}).body();\n        let code = JSON.parse(request).code || \"\";\n        const cctv = Get('urls')[0];\n        const hasMore = code.indexOf('查看更多') !== -1;\n        if (hasMore) {\n            const body1 = \"video_id=\" + bookId + \"&page=2&series=1&with_ad_wcm=1\";\n            const nextRequest = java.post(cctv + '/ajax/album_pagination', body1, {}).body();\n            const nextCode = JSON.parse(nextRequest).code || \"\";\n            if (!nextCode) break;\n            code += nextCode;\n            code = code.replace(/查看更多/g, '');\n        }\n        let fixedCode = code.replace(/<img src=\"/g, `<img src=\"${cctv}`);\n        const html = `<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n    <meta charset=\"utf-8\">\n    <title>书评</title>\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n    <style>\n        :root {\n    --bg: #f5f5f5;\n    --panel-bg: #fff;\n    --text-primary: #333;\n    --text-secondary: #666;\n    --text-tertiary: #999;\n    --border: #eee;\n    --accent: #ff4444;\n    --radius: 16px;\n    --shadow: 0 2px 10px rgba(0,0,0,0.06);\n    --s-sm: 8px;\n    --s-md: 12px;\n    --s-lg: 16px;\n}\n* {\n    margin: 0;\n    padding: 0;\n    box-sizing: border-box;\n    font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif;\n}\nbody {\n    background: var(--bg);\n    padding: var(--s-md);\n    line-height: 1.6;\n    -webkit-font-smoothing: antialiased;\n}\n.panel {\n    background: var(--panel-bg);\n    border-radius: var(--radius);\n    margin-bottom: var(--s-lg);\n    overflow: hidden;\n    box-shadow: var(--shadow);\n    transition: transform 0.2s ease, box-shadow 0.2s ease;\n}\n.panel:hover {\n    transform: translateY(-2px);\n    box-shadow: 0 4px 15px rgba(0,0,0,0.1);\n}\n.panel-body {\n    padding: var(--s-lg);\n}\n.timeline {\n    display: flex;\n    flex-direction: column;\n    gap: var(--s-md);\n}\n.timeline-header-wrapper {\n    display: flex;\n    align-items: center;\n    gap: var(--s-md);\n}\n.timeline-avatar {\n    width: 44px;\n    height: 44px;\n    border-radius: 50%;\n    border: 1px solid var(--border);\n    object-fit: cover;\n    transition: transform 0.2s ease;\n    flex-shrink: 0;\n}\n.timeline-avatar:hover {\n    transform: scale(1.05);\n}\n.timeline-user-group {\n    display: flex;\n    align-items: center;\n    gap: var(--s-md);\n    flex: 1;\n}\n.timeline-user-info {\n    display: flex;\n    flex-direction: column;\n    gap: 2px;\n}\n.timeline-username {\n    font-size: 15px;\n    font-weight: 600;\n    color: var(--text-primary);\n}\n.timeline-user-title {\n    font-size: 11px;\n    color: var(--text-tertiary);\n}\n.timeline-user-level {\n    font-size: 11px;\n    color: var(--text-secondary);\n    background: var(--bg);\n    padding: 2px 8px;\n    border-radius: 10px;\n    white-space: nowrap;\n}\n.timeline-header-actions {\n    display: flex;\n    align-items: center;\n}\n.comment-vote {\n    font-size: 11px;\n    color: var(--accent);\n    text-decoration: none;\n    display: flex;\n    align-items: center;\n    gap: 3px;\n    transition: color 0.2s ease;\n}\n.comment-vote:hover {\n    color: #ff2222;\n}\n.timeline-meta {\n    display: flex;\n    justify-content: space-between;\n    margin: var(--s-sm) 0 var(--s-md) 0;\n    font-size: 11px;\n    color: var(--text-tertiary);\n    padding-left: calc(44px + var(--s-md));\n}\n.timeline-badge img {\n    width: 16px;\n    height: 16px;\n    margin-right: 4px;\n    vertical-align: middle;\n}\n.timeline-content {\n    font-size: 14px;\n    color: var(--text-primary);\n    margin-bottom: var(--s-md);\n    word-break: break-word;\n    padding-left: calc(44px + var(--s-md));\n}\n.timeline-info {\n    display: flex;\n    justify-content: space-between;\n    font-size: 11px;\n    color: var(--text-tertiary);\n    padding-left: calc(44px + var(--s-md));\n}\n.timeline-info-reply {\n    color: var(--text-secondary);\n    margin-right: var(--s-md);\n    cursor: pointer;\n}\n.timeline-info-other-reply {\n    color: var(--accent);\n    cursor: pointer;\n}\n.timeline-ft a {\n    color: var(--text-secondary);\n    text-decoration: none;\n    transition: color 0.2s ease;\n}\n.timeline-ft a:hover {\n    color: var(--accent);\n}\n.reply-line {\n    height: 1px;\n    background: var(--border);\n    margin: var(--s-lg) 0;\n}\n.other-timelines {\n    margin-top: var(--s-md);\n    padding-left: calc(44px + var(--s-md));\n}\n.reply-item {\n    display: flex;\n    flex-direction: column;\n    gap: var(--s-sm);\n    margin-bottom: var(--s-md);\n    padding: var(--s-md);\n    background: var(--bg);\n    border-radius: 8px;\n}\n.reply-header {\n    display: flex;\n    align-items: center;\n    gap: var(--s-md);\n}\n.reply-avatar {\n    width: 36px;\n    height: 36px;\n    border-radius: 50%;\n    border: 1px solid var(--border);\n    object-fit: cover;\n    flex-shrink: 0;\n}\n.reply-user-info {\n    display: flex;\n    flex-direction: column;\n    gap: 1px;\n}\n.reply-username {\n    font-size: 14px;\n    font-weight: 600;\n    color: var(--text-primary);\n}\n.reply-user-title {\n    font-size: 10px;\n    color: var(--text-tertiary);\n}\n.reply-meta {\n    display: flex;\n    justify-content: space-between;\n    font-size: 10px;\n    color: var(--text-tertiary);\n    margin: 0 0 var(--s-sm) calc(36px + var(--s-md));\n}\n.reply-content {\n    font-size: 13px;\n    color: var(--text-primary);\n    margin-bottom: var(--s-sm);\n    padding-left: calc(36px + var(--s-md));\n}\n.disclose {\n    background: var(--bg);\n    padding: var(--s-md);\n    border-radius: 8px;\n    margin-bottom: var(--s-md);\n    display: flex;\n    flex-direction: column;\n    gap: var(--s-sm);\n    padding-left: calc(44px + var(--s-md));\n}\n.disclose p {\n    font-size: 13px;\n    color: var(--text-secondary);\n}\n.disclose a {\n    font-size: 13px;\n    color: var(--accent);\n    text-decoration: none;\n    align-self: flex-start;\n}\n@media (max-width: 360px) {\n    body { padding: var(--s-sm); }\n    .timeline-avatar { width: 38px; height: 38px; }\n    .reply-avatar { width: 32px; height: 32px; }\n    .timeline-content, .reply-content, .disclose, .timeline-meta, .timeline-info, .reply-meta {\n        padding-left: calc(38px + var(--s-sm));\n    }\n    .other-timelines { padding-left: calc(38px + var(--s-sm)); }\n    .timeline-content { font-size: 13px; }\n    .panel-body { padding: var(--s-md); }\n    .timeline-badge img { width: 14px; height: 14px; }\n}\n@media (prefers-color-scheme: dark) {\n    :root {\n        --bg: #121212;\n        --panel-bg: #1e1e1e;\n        --text-primary: #f5f5f5;\n        --text-secondary: #bbb;\n        --text-tertiary: #888;\n        --border: #333;\n        --accent: #ff6666;\n        --shadow: 0 2px 10px rgba(0,0,0,0.2);\n    }\n}\n     </style>\n </head>\n <body>\n ${fixedCode}\n </body>\n </html>`;\n         java.startBrowser(\"\", \"\", html);\n         break;\n}",
+   "content": "{{@class.novel-content@html}}\n{{@class.row thumb-overlay-albums@tag.img@data-original}}\n@js:url = baseUrl\nif(baseUrl.includes(\"novel\")){\n\tif(!result) {\n\t\tresult =\"\\n 90天後會自動解鎖\"\n\t\t result\n\t\t} else {\n\t\t\tresult\n\t}\t} else {\nresult.split(\"\\n\").map(x=>'<img src=\"'+x+'\">').join(\"\\n\")\n}",
+   "imageDecode": "if (src.search(\"qyyuapi.com\") != -1) {\n    result;\n} else {\n    var Magua = new JavaImporter();\n    Magua.importPackage(Packages.java.io, Packages.android.graphics);\n    with(Magua) {\n        let mac = src.match(/photos\\/(\\d+)?\\/(\\d+)?/);\n        let bookId = mac[1];\n        let imgId = mac[2];\n        if (src.search(\"gif\") != -1 || Number(bookId) < 220980) {\n            result;\n        } else {\n            if (Number(bookId) > 421925) {\n                let md5 = java.md5Encode((bookId + imgId));\n                let ascii = md5.substr( - 1).charCodeAt(0);\n                var num = (ascii % 8 + 1) * 2;\n            } else if (Number(bookId) >= 268850) {\n                let md5 = java.md5Encode((bookId + imgId));\n                let ascii = md5.substr( - 1).charCodeAt(0);\n                var num = (ascii % 10 + 1) * 2;\n            } else {\n                var num = 10;\n            }\n            var img = BitmapFactory.decodeByteArray(result, 0, result.length);\n            var height = img.getHeight();\n            var width = img.getWidth();\n            var y = Math.floor(height / num);\n            var remainder = height % num;\n            var newImg = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);\n            let canvas = new Canvas(newImg);\n            for (let i = 1; i <= num; i++) {\n                let h = i === num ? remainder: 0;\n                canvas.drawBitmap(Bitmap.createBitmap(img, 0, y * (i - 1), width, y + h), 0, height - y * i - h, null);\n            }\n            var newbit = new ByteArrayOutputStream();\n            newImg.compress(Bitmap.CompressFormat.PNG, 100, newbit);\n            newbit.toByteArray();\n        }\n    }\n}",
+   "imageStyle": "FULL"
+  },
+  "header": "{\n\t\"User-Agent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\",\n\t\"Referer\":\"baseUrl\"\n}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "学外漫画",
+  "bookSourceUrl": "https://www.xwmanhua.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "/search?types=comic&searhword={{key}}",
+  "ruleSearch": {
+   "bookList": ".col-lg-2",
+   "bookUrl": "a@href",
+   "checkKeyWord": "爸妈来自二次元",
+   "coverUrl": "img@data-original",
+   "name": "a@text"
+  },
+  "ruleBookInfo": {
+   "author": ".shuxin@dd.0@text",
+   "coverUrl": "img@src",
+   "init": "#setnmh-bookms",
+   "intro": "《{{@@.bookname@text}}》\n标签：{{@@.tags@a@text##\\s##,}}\n{{@@.shuxin@dd@html}}\n简介：\n{{@@.ms@html}}",
+   "kind": ".tags@a@text",
+   "name": ".bookname@text"
+  },
+  "ruleToc": {
+   "chapterList": "-#ul_chapter1@li@a",
+   "chapterName": "text",
+   "chapterUrl": "href"
+  },
+  "ruleContent": {
+   "content": "<js>\nvar evalStr=src.match(/(eval.*\\)\\))/)[1]\nvar match = evalStr.match(/eval\\(function\\(p,a,c,k,e,d\\)\\{.*?\\}\\('(.*?)',(\\d+),(\\d+),'(.*?)'\\.split\\('\\|'\\)/);\n    var p = match[1];        \n    var a = parseInt(match[2]);\n    var c = parseInt(match[3]); \n    var k = match[4].split('|');     \n    var result = unpack(p, a, c, k, undefined, {});\n    eval(result);\n    var imgTags = picTree.map(item => `<img src=\"${item}\">`).join('\\n');\nimgTags;\n    </js>"
+  },
+  "enabled": true
+ },
+ {
+  "bookSourceName": "Hitomi",
+  "bookSourceUrl": "https://hitomi.si/",
+  "bookSourceType": 2,
+  "bookSourceGroup": "R18,漫画",
+  "searchUrl": "tag/{{key}}<,?page={{page}}>",
+  "ruleSearch": {
+   "author": "{{\"Hitomi\"}}",
+   "bookList": ".m-item",
+   "bookUrl": "a.1@href",
+   "coverUrl": ".lazy@data-src",
+   "intro": ".m-title@text",
+   "kind": ".lang@a@title",
+   "name": ".m-title@text"
+  },
+  "ruleBookInfo": {
+   "author": ".br.2@a@text##\\n##&",
+   "canReName": "1",
+   "coverUrl": ".manga-img@img@src",
+   "intro": "&nbsp;{{new Date(java.getString('time@datetime')).toLocaleString().split('/').join('-');}}",
+   "kind": ".br!2@a@text",
+   "name": "h1@text",
+   "tocUrl": "[href*=/read/]@href"
+  },
+  "ruleToc": {
+   "chapterList": "body",
+   "chapterName": ".center@li.1@text"
+  },
+  "ruleContent": {
+   "content": "@js:\nconst doc = org.jsoup.Jsoup.parse(result);\nconst servers = [];\ndoc.select('[data-server]').forEach(e => servers.push(e.attr('data-server')));\nconst server = servers[source.getVariable()] || servers[0];\nlet html = '';\ndoc.select('.chapter-imgs img').forEach(e => html += `<img src=\"${server + e.attr('data-url')}\">\\n`);\nhtml;"
+  },
+  "enabled": true
+ },
+ {
+  "bookSourceName": "😍轻写真",
+  "bookSourceUrl": "http://www.635k.com/##@Mengteen",
+  "bookSourceType": 2,
+  "bookSourceGroup": "😍",
+  "searchUrl": "/search/{{page}}_2.html",
+  "ruleSearch": {
+   "author": ".item-meta@text",
+   "bookList": "#post_list_box@li",
+   "bookUrl": "h2@a@href",
+   "checkKeyWord": "写真",
+   "coverUrl": "img@src",
+   "intro": "<br>🌟\n<br>📆{{@@.ltim@text}} 发布\n<br>{{\"🏄Mengteen ©2025\"}}",
+   "name": "h2@a@text"
+  },
+  "ruleBookInfo": {
+   "kind": "span@text",
+   "tocUrl": ".all-page@a@href"
+  },
+  "ruleToc": {
+   "chapterList": "ul@li",
+   "chapterName": "text",
+   "chapterUrl": "href"
+  },
+  "ruleContent": {
+   "content": "@js: \nlet pics=java.getString('img@src'); \nlet p=String(pics).split(\"\\n\").map(i=>`<img src=\"${i}\">`).join(\"\\n\");\np;",
+   "imageStyle": "FULL"
+  },
+  "header": "{\"User-Agent\": \"Mozilla/5.0 (Linux; Android 13; 2211133C Build/TKQ1.220905.001) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36\"}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "久久漫画",
+  "bookSourceUrl": "https://www.jjmhw.cc",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画 书源",
+  "searchUrl": "\n<js>\neval(function(p,a,c,k,e,r){e=function(c){return c.toString(a)};if(!''.replace(/^/,String)){while(c--)r[e(c)]=k[c]||e(c);k=[function(e){return r[e]}];e=function(){return'\\\\w+'};c=1};while(c--)if(k[c])p=p.replace(new RegExp('\\\\b'+e(c)+'\\\\b','g'),k[c]);return p}('2(3(4.5));1==6?\"/7?8={{9}}\":a.b(\"\\\\c\\\\0\\\\d\\\\e\\\\f\\\\g\\\\h\\\\0\");',18,18,'u2757||eval|String|source|bookSourceComment|flag|search|keyword|key|java|toast|n|u672a|u542f|u7528|u4e66|u6e90'.split('|'),0,{}))\n</js>",
+  "ruleSearch": {
+   "author": ".book-list-info-bottom-item@text\n<js>\nresult = result\n  .replace(/[,xX&]|[图文][:：]/g, \"/\")\n  .replace(/\\/\\/\\/|\\/\\//g, \"/\")\n  .replace(/^[\\/]/g, \"\")\neval(String(source.bookSourceComment));\nfor (x in i) result = ti(result, i[x], z[x]);\n</js>\n",
+   "bookList": ".book-list li",
+   "bookUrl": "a.0@href",
+   "coverUrl": ".book-list-cover img@data-original##http:##https:",
+   "intro": ".book-list-info-desc",
+   "kind": ".book-list-info-bottom-right-font@text##中|已",
+   "name": ".book-list-info-title@text\n<js>\neval(String(source.bookSourceComment));\nfor (x in i) result = ti(result, i[x], z[x]).replace(/[（\\(].*/, \"\");\n</js>"
+  },
+  "ruleBookInfo": {
+   "author": "author",
+   "coverUrl": "cover",
+   "init": "<js>\neval(function(p,a,c,k,e,r){e=function(c){return(c<a?'':e(parseInt(c/a)))+((c=c%a)>35?String.fromCharCode(c+29):c.toString(36))};if(!''.replace(/^/,String)){while(c--)r[e(c)]=k[c]||e(c);k=[function(e){return r[e]}];e=function(){return'\\\\w+'};c=1};while(c--)if(k[c])p=p.replace(new RegExp('\\\\b'+e(c)+'\\\\b','g'),k[c]);return p}('D(6(E.F));G J=H.I.K.L(9),$1=b(a){c 6(J.7(\\'[M=\"N:\\'+a+\\'\"]\\').f(\"O\"))},$2=b(a){c 6(J.7(a).P())},$3=b(a){c 6(J.7(a).f(\"Q\"))},$4=b(a){c 6(J.7(a).f(\"R-S\"))},h=T,s=$2(\".0-d-j-1\").5(/\\\\U|\\\\V/g,\"\"),k=$2(\".0-8-e-m:q-o(4) a\")+\",\"+$2(\".0-8-e-W a\"),l=$2(\".0-d-1 r:X-o a\"),t=$2(\".0-d-j-3\").5(/\\\\Y\\\\Z/g,\"\"),u=J.7(\".0-d-1 r\").10;1==11?v={12:$2(\".0-8-e-j\").5(/[\\\\13\\\\(].*/,\"\"),m:$2(\".0-8-e-m:q-o(3)\").5(/[,14&]|[\\\\15\\\\16][:\\\\w]/g,\"/\").5(/\\\\/\\\\/\\\\/|\\\\/\\\\//g,\"/\"),17:s+\",\"+k+\",\"+t,18:l+\"\\\\y\"+t+\"\\\\y[\"+u+\"]\",19:\"<A>\"+$2(\"p.0-1a\").5(/.*\\\\1b\\\\1c\\\\1d\\\\1e[:\\\\w].*/g,\"\").5(/(^|[\\\\1f\\\\1g\\\\1h!?]+[\"\\\\1i\\\\1j\\\\1k\\\\1l]?)/g,\"$1<A>\"),B:$4(\".0-8-B 1m\").5(/1n:/,\"1o:\"),h:h}:1p.1q(\"\\\\n\\\\C\\\\1r\\\\1s\\\\1t\\\\1u\\\\1v\\\\C\");9=1w.1x(v);1y(x 1z i)9=1A(9,i[x],z[x]);',62,99,'detail|||||replace|String|select|main|result||function|return|list|info|attr||url||title|||author||child||nth|li|||count|book|uff1a||u00b7||br|cover|u2757|eval|source|bookSourceComment|var|org|jsoup||Jsoup|parse|property|og|content|text|href|data|original|baseUrl|u4e2d|u5df2|class|last|u66f4|u65b0|length|flag|name|uff08|xX|u56fe|u6587|kind|latest|intro|desc|u5185|u5bb9|u4ecb|u7ecd|u3002|uff01|uff1f|u201d|u300d|uff09|u3011|img|http|https|java|toast|u672a|u542f|u7528|u4e66|u6e90|JSON|stringify|for|in|ti'.split('|'),0,{}))\n</js>",
+   "intro": "intro",
+   "kind": "kind",
+   "lastChapter": "latest",
+   "name": "name",
+   "tocUrl": "url"
+  },
+  "ruleToc": {
+   "chapterList": "<js>\neval(function(p,a,c,k,e,r){e=function(c){return c.toString(a)};if(!''.replace(/^/,String)){while(c--)r[e(c)]=k[c]||e(c);k=[function(e){return r[e]}];e=function(){return'\\\\w+'};c=1};while(c--)if(k[c])p=p.replace(new RegExp('\\\\b'+e(c)+'\\\\b','g'),k[c]);return p}('4(5(6.7));1==8?0=2.9(\".b-0-1 c a\"):2.d(\"\\\\e\\\\3\\\\f\\\\g\\\\h\\\\i\\\\j\\\\3\");2.k(\"l\",1);0;',22,22,'list||java|u2757|eval|String|source|bookSourceComment|flag|getElements||detail|li|toast|n|u672a|u542f|u7528|u4e66|u6e90|put|Enable'.split('|'),0,{}))\n</js>",
+   "chapterName": "text",
+   "chapterUrl": "href"
+  },
+  "ruleContent": {
+   "content": "<js>\neval(function(p,a,c,k,e,r){e=function(c){return c.toString(a)};if(!''.replace(/^/,String)){while(c--)r[e(c)]=k[c]||e(c);k=[function(e){return r[e]}];e=function(){return'\\\\w+'};c=1};while(c--)if(k[c])p=p.replace(new RegExp('\\\\b'+e(c)+'\\\\b','g'),k[c]);return p}('1==0.3(\"4\")?\"<5>\"+6(0.7(\".8-9-1.a b\")).c(/d:/g,\"e:\"):0.f(\"\\\\h\\\\2\\\\i\\\\j\\\\k\\\\l\\\\m\\\\2\");',23,23,'java||u2757|get|Enable|br|String|getElements|view|main|readForm|img|replace|http|https|toast||n|u672a|u542f|u7528|u4e66|u6e90'.split('|'),0,{}))\n</js>",
+   "imageStyle": "FULL"
+  },
+  "header": "{\n  \"User-agent\":\"Dalvik/2.1.0 (Linux; U; Android 9; PCRT00 Build/PQ3B.190801.002)\"\n}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "漫小肆20251217",
+  "bookSourceUrl": "https://www.jjmh.top/",
+  "bookSourceType": 2,
+  "bookSourceGroup": "测试",
+  "searchUrl": "https://www.jjmh.top/search?keyword={{key}}",
+  "ruleSearch": {
+   "author": "",
+   "bookList": "class.mh-list col7@li",
+   "bookUrl": "tag.a@href",
+   "coverUrl": "class.mh-item@tag.a@tag.p@style\n@js:\nfunction extractUrl(str) {\n  var regex = /url\\((.*?)\\)/;\n  var match = str.match(regex);\n  return match? match[1] : null;\n}\njava.log(extractUrl(result))",
+   "intro": "",
+   "kind": "",
+   "lastChapter": "class.chapter@text",
+   "name": "class.mh-item@a@text"
+  },
+  "ruleBookInfo": {
+   "author": "class.subtitle.1@text",
+   "coverUrl": "class.cover.0@tag.img@src",
+   "intro": "class.block.4@text",
+   "kind": "class.block.3@text",
+   "lastChapter": "class.block.3@text",
+   "name": "class.info@tag.h1@text",
+   "tocUrl": "",
+   "wordCount": "class.block.0@text"
+  },
+  "ruleToc": {
+   "chapterList": "class.view-win-list detail-list-select@li",
+   "chapterName": "tag.a@text",
+   "chapterUrl": "tag.a@href"
+  },
+  "ruleContent": {
+   "content": "class.comiclist@tag.div@class.comicpage@tag.div@tag.img@html\n\n@js:\nfunction removeDuplicateImgTags(str) { \n// 定义了一个名为 removeDuplicateImgTags 的函数，它接受一个字符串参数 str\n\nvar imgTags = str.split(/\\n|\\r/).filter(Boolean); \n// 将输入的字符串 str 按照换行符 \\n 或回车符 \\r 进行分割，得到一个字符串数组 imgTags\n// 然后使用 filter(Boolean) 方法过滤掉空字符串元素\n\nvar uniqueImgTags = Array.from(new Set(imgTags)); \n// 通过创建一个 Set 数据结构来去除 imgTags 数组中的重复元素，并使用 Array.from 方法将其转换回数组 uniqueImgTags\n\nreturn uniqueImgTags.join('\\n'); \n// 将 uniqueImgTags 数组的元素用换行符 \\n 连接成一个字符串并返回\n\n}\n\njava.log(removeDuplicateImgTags(result));\n// 调用 removeDuplicateImgTags 函数，并将结果传递给 java.log 方法进行输出，这里的 result 是“class.comiclist@tag.div@class.comicpage@tag.div@tag.img@html”字符串变量",
+   "title": "",
+   "webJs": ""
+  },
+  "enabled": true
+ },
+ {
+  "bookSourceName": "来漫画",
+  "bookSourceUrl": "https://m.laimanhua.org/",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "https://m.laimanhua.org/index.php/search?key={{key}}<,/{{page}}>",
+  "ruleSearch": {
+   "bookList": ".MTagBookList_tagBookBox@.MTagBookList_tagBookItem",
+   "bookUrl": "a@href",
+   "coverUrl": "img@src",
+   "intro": ".MTagBookList_intro@text",
+   "kind": ".MTagBookList_tagsBox@a@text",
+   "name": ".MTagBookList_bookName@text"
+  },
+  "ruleBookInfo": {
+   "coverUrl": ".dramaDetail_bookCover@img@src",
+   "intro": ".adm-ellipsis@text",
+   "kind": ".dramaDetail_tagsBox@a@text",
+   "lastChapter": ".drama_newchapter@a@text",
+   "name": ".dramaDetail_bookName@text"
+  },
+  "ruleToc": {
+   "chapterList": ".CatalogList_content@li@a",
+   "chapterName": "text",
+   "chapterUrl": "href"
+  },
+  "ruleContent": {
+   "content": "<js>\nfunction decode(bytes, key, iv, mode) {\n    return java.createSymmetricCrypto(\n        mode || \"aes/cbc/pkcs7padding\",\n        key,\n        iv\n    ).decryptStr(bytes)\n}\n\na = result.match(/var tpl_path = '.*', params = '(.*)';/)[1];\n\nd = decode(\n    a,\n    \"9S8$vJnU2ANeSRoF\",\n    a.slice(0,16)\n)\nm = d.match(/{\".*/)[0]\nmList = java.getString(\"$.images[*]\",m)\nmList.split('\\n').map(x => `<img src=\"https://img1.baipiaoguai.org/${x}\">`).join('\\n');\n</js>"
+  },
+  "header": "{\"User-Agent\":\"Mozilla\\/5.0 (Linux; Android 13; Pixel 7) AppleWebKit\\/537.36 (KHTML, like Gecko) Chrome\\/120.0.0.0 Mobile Safari\\/537.36\",\"Referer\":\"https://m.laimanhua.org/\",\"Origin\":\"https://m.laimanhua.org\",\"Accept\":\"*/*\",\"Accept-Language\":\"zh-CN,zh;q=0.9\",\"DNT\":\"1\",\"sec-fetch-dest\":\"empty\",\"sec-fetch-mode\":\"cors\",\"sec-fetch-site\":\"cross-site\"}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "看漫画",
+  "bookSourceUrl": "https://www.kanman.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "https://www.kanman.com/api/getsortlist?search_key={{key}}&page=1&size=20",
+  "ruleSearch": {
+   "author": "$.cartoon_author_list_name",
+   "bookList": "$.data||$.data.data[*]||$.data[*]",
+   "bookUrl": "https://www.kanman.com/{{$.comic_id}}/",
+   "coverUrl": "https://image.yqmh.com/mh/{{$.comic_id}}.jpg",
+   "intro": "$.cartoon_desc",
+   "kind": "$.comic_type_name",
+   "lastChapter": "$.last_chapter_name",
+   "name": "$.comic_name"
+  },
+  "ruleBookInfo": {
+   "author": "meta[property=\"og:novel:author\"]@content",
+   "coverUrl": "meta[property=\"og:image\"]@content",
+   "intro": "class.intro@text || class.j-desc@text || id.detail-desc@text",
+   "kind": "meta[property=\"og:novel:category\"]@content",
+   "lastChapter": "meta[property=\"og:novel:latest_chapter_name\"]@content",
+   "name": "meta[property=\"og:novel:book_name\"]@content"
+  },
+  "ruleToc": {
+   "chapterList": "id.j_chapter_list@li",
+   "chapterName": "class.name@text",
+   "chapterUrl": "a@href"
+  },
+  "ruleContent": {
+   "content": "@js:\nvar res = \"\";\ntry {\n    var match = result.match(/window\\.comicInfo\\s*=\\s*(.*?)(?:,window\\.hideguide|;|<\\/script>)/);\n    if (match) {\n        var json = eval('(' + match[1] + ')');\n        var images = json.current_chapter.chapter_img_list;\n        var html = [];\n        for(var i=0; i<images.length; i++){\n            var imgUrl = String(images[i]).replace(/^\\/\\//, 'https://');\n            html.push('<img src=\"' + imgUrl + '\">');\n        }\n        res = html.join('\\n');\n    } else {\n        res = \"解析失败：未匹配到图片数据\";\n    }\n} catch(e) {\n    res = \"解析报错：\" + e.message;\n}\nres;"
+  },
+  "header": "{\n  \"User-Agent\": \"Mozilla/5.0 (X11; Linux x86_64; rv:149.0) Gecko/20100101 Firefox/149.0\"\n}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "图库漫画",
+  "bookSourceUrl": "https://www.tuku.cc/",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "search?title={{key}}",
+  "ruleSearch": {
+   "bookList": "class.hidden@class.swiper-card-item",
+   "bookUrl": "class.swiper-card-item-img@href",
+   "checkKeyWord": "和青梅竹马之间不会有恋爱喜剧",
+   "coverUrl": "class.swiper-card-item-img@tag.img@src",
+   "name": "class.swiper-card-item-img@title"
+  },
+  "ruleBookInfo": [],
+  "ruleToc": {
+   "chapterList": "class.manga-chapter-wrap@class.manga-chapter-item",
+   "chapterName": "class.i-b@text",
+   "chapterUrl": "href"
+  },
+  "ruleContent": {
+   "content": "class.content@tag.img@data-original\n@js:\nresult = result.split(\"\\n\");\nvar list = '';\nfor (var i = 0; i < result.length; i++) {\n    if (result[i] != ''){\n        list += \"<img src='\" + result[i] + \"'>\";\n    }\n}\nlist;"
+  },
+  "header": "{\n    \"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0\",\n    \"Referer\": \"https://www.tuku.cc/chapter788839/\",\n    \"DNT\": \"1\"\n}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "🌟tibiu漫画",
+  "bookSourceUrl": "https://comic.tibiu.net/",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "https://comic.tibiu.net/index.php/api/data/search?key={{key}}&page={{page}}",
+  "ruleSearch": {
+   "author": "$.author",
+   "bookList": "@json:$..data[*]",
+   "bookUrl": "https://comic.tibiu.net/index.php/api/data/comicinfo?cid={{$.id}}",
+   "checkKeyWord": "千万别",
+   "coverUrl": "$.pic",
+   "intro": "$.description",
+   "kind": "$.tags",
+   "lastChapter": "$.chapter_name",
+   "name": "$.name"
+  },
+  "ruleBookInfo": {
+   "author": "@json:$.data.author",
+   "coverUrl": "@json:$.data.pic",
+   "intro": "@json:$.data.content",
+   "kind": "@json:$.data.tags",
+   "name": "@json:$.data.name",
+   "tocUrl": "https://comic.tibiu.net/index.php/api/data/chapter?mid={{@json:$.data.id}}"
+  },
+  "ruleToc": {
+   "chapterList": "-@json:$..data[*]",
+   "chapterName": "$.name",
+   "chapterUrl": "@js:result='https://comic.tibiu.net/index.php/api/data/pic?cid='+result.id"
+  },
+  "ruleContent": {
+   "content": "@js:\n(function(){\n    let data = JSON.parse(result).data;\n    if (!data || !data.length) return \"\";\n    // 反转图片顺序\n    let reversedData = data.reverse();\n    // 生成图片列表，并添加样式和referrerpolicy属性\n    let imgsHtml = reversedData.map(function(item) {\n        return '<img src=\"' + item.img + '\" style=\"max-width:100%; display:block;\" referrerpolicy=\"no-referrer\">';\n    }).join('');\n    return imgsHtml;\n})();",
+   "imageStyle": "FULL",
+   "sourceRegex": ""
+  },
+  "header": "{  \"User-Agent\": \"Mozilla/5.0 (Linux; Android 8.1.0; JKM-AL00b Build/HUAWEIJKM-AL00b; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/66.0.3359.126 MQQBrowser/6.2 TBS/044807 Mobile Safari/537.36\"}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "🌟毒牙漫画",
+  "bookSourceUrl": "http://www.duya.cc",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "{{(function(){var h=java.ajax('http://www.duya.cc/');var p=(h.match(/href=\\\"[/]([a-z0-9]+)\\\" class=\\\"search\\\"/)||[,'f51'])[1];var s=Date.now();while(Date.now()-s<2000){};return 'http://www.duya.cc/'+p+'?searchkey='+java.encodeURI(key)+',{\\\"webView\\\":true}'})()}}",
+  "ruleSearch": {
+   "author": "div.nmain_cl_author@text",
+   "bookList": "div.nmain_cl li",
+   "bookUrl": "a@href",
+   "coverUrl": "img.lazyload@data-src",
+   "intro": "",
+   "name": "div.nmain_cl_tit@text"
+  },
+  "ruleBookInfo": {
+   "author": "meta[property='og:novel:author']@content",
+   "coverUrl": "meta[property='og:image']@content",
+   "intro": "meta[property='og:description']@content",
+   "kind": "meta[property='og:novel:category']@content",
+   "name": "meta[property='og:novel:book_name']@content"
+  },
+  "ruleToc": {
+   "chapterList": "ul[id='ncp3_ul'] li",
+   "chapterName": ".ncp3li_title@text",
+   "chapterUrl": "a@href"
+  },
+  "ruleContent": {
+   "content": "img.lazy@data-original@js:result.split(String.fromCharCode(10)).filter(function(u){return u}).map(function(u){return '<img src=\\\"'+u+'\\\" >'}).join(String.fromCharCode(10))",
+   "imageStyle": "FULL"
+  },
+  "header": "{  \"User-Agent\": \"Mozilla/5.0 (Linux; Android 8.1.0; JKM-AL00b Build/HUAWEIJKM-AL00b; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/66.0.3359.126 MQQBrowser/6.2 TBS/044807 Mobile Safari/537.36\"}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "漫画搬运（优+）",
+  "bookSourceUrl": "https://www.antbyw.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "/plugin.php?id=jameson_manhua&a=search&c=index&keyword={{key}}",
+  "ruleSearch": {
+   "bookList": ".uk-card",
+   "bookUrl": "a.1@href",
+   "checkKeyWord": "怪兽8号",
+   "coverUrl": "a.0@img@src",
+   "kind": ".uk-breadcrumb@li@a@text",
+   "name": "a.1@text"
+  },
+  "ruleBookInfo": {
+   "author": "text.漫畫作者@text##漫畫作者:##",
+   "coverUrl": ".uk-grid-collapse.1@img@src",
+   "intro": ".uk-grid-collapse.1@class.uk-alert@text",
+   "kind": ".uk-grid-collapse.1@class.uk-text-small@text##别名:|更新時間:|更新到:|漫畫作者:##",
+   "lastChapter": "text.更新到@text##更新到:##",
+   "name": ".uk-grid-collapse.1@h3@text"
+  },
+  "ruleToc": {
+   "chapterList": ".uk-alert-warning:not(div)&&.uk-alert-warning:not(div) ~ .uk-subnav ~.uk-switcher\n@js:\nlist=[]\nvoList = Array.from(result).filter(n=>String(n).includes('<h3'))\n\nulList = Array.from(result).filter(n=>String(n).includes('<ul'))\n\nulList.map((n,index)=>{\n\n   list.push({\n\t   href:\"\",\n\t   text:java.getString(\"text\",voList[index]),\n\t   volume:true\n  })\n dList = []\n  \nArray.from(org.jsoup.Jsoup.parse(n).select(\"li\")).reverse().map(t=>{\t      \n\tmList = Array.from(org.jsoup.Jsoup.parse(t).select(\".muludiv\")).reverse().map(k=>{\n\n\t dList.push({\n\t   href:org.jsoup.Jsoup.parse(k).select(\"a\")[0].attr(\"href\"),\n\t   text:org.jsoup.Jsoup.parse(k).select(\"a\")[0].text(),\n\t   volume:false\n\t })\n     })\n   })\n   \n   if(java.getString(\"text\",voList[index])!=\"番外篇\"){\n\t  dList = dList.sort(function(a, b) {\n            return parseInt((a.text.match(/\\d+/) || [0])[0], 10) - parseInt((b.text.match(/\\d+/) || [0])[0], 10)\n        })\n    }\n    list = list.concat(dList)\n})\n\nlist",
+   "chapterName": "text",
+   "chapterUrl": "href",
+   "isVolume": "volume"
+  },
+  "ruleContent": {
+   "content": "<js>\nresult=String(src).trim().replace(/\\s+/g,'').match(/(let|var|const)+urls=(\\[.*?\\])/g)[0].replace(/(let|var|const)+urls=/g,\"\")\n\nresult=JSON.parse(result).map(n=>`<img src=\"${n}\" />`).join(\"\")\n</js>",
+   "nextContentUrl": "@js:\nvar base = baseUrl.replace(/&page=\\d+/, '').replace(/\\?page=\\d+/, '');\nvar conn = base.indexOf('?') !== -1 ? '&' : '?';\nvar totalMatch = src.match(/共\\s*(\\d+)\\s*页/);\nvar total = totalMatch ? parseInt(totalMatch[1]) : 42;\nvar result = [];\nfor (var p = 2; p <= total; p++) {\n    result.push(base + conn + 'page=' + p);\n}\nresult;"
+  },
+  "header": "{\n    \"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0\",\"Cookie\":\"0\"\n}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "🎨武芊漫画",
+  "bookSourceUrl": "https://comic.mkzcdn.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "https://comic.mkzcdn.com/search/keyword/?keyword={{key}}&page_num={{page}}&page_size=20",
+  "ruleSearch": {
+   "author": "$.author_title",
+   "bookList": "$..list[*]",
+   "bookUrl": "https://comic.mkzcdn.com/comic/info/?comic_id={{$.comic_id}}",
+   "coverUrl": "$.cover",
+   "intro": "$.feature",
+   "lastChapter": "$.chapter_title",
+   "name": "$.title"
+  },
+  "ruleBookInfo": {
+   "intro": "$..content##^##<br/>",
+   "kind": "$..theme_id\n@js:\nlet class_name=\"全部&修真&霸总&恋爱&校园&冒险&搞笑&生活&热血&架空&后宫&玄幻&悬疑&恐怖&灵异&动作&科幻&战争&古风&穿越&竞技&励志&同人&真人\".split(\"&\");\nlet class_url=\"0&2&1&3&4&5&6&7&8&9&10&12&13&14&15&16&17&18&19&20&21&23&24&26\".split(\"&\")\n\nlet res=Array.from(result)[0].split(\",\")\n\nfor(var i=0;i<class_url.length;i++){\n\tfor(var j=0;j<res.length;j++){\n\t\tif(class_url[i]==res[j]){\n\t\t\t  res[j]=class_name[i]\n\t\t\t}\n}\n}\n\n\nres.join(\",\")",
+   "name": "@put:{comic_id:$..comic_id}",
+   "tocUrl": "https://comic.mkzcdn.com/chapter/v1/?comic_id={{$..comic_id}}"
+  },
+  "ruleToc": {
+   "chapterList": "$.data",
+   "chapterName": "$.title",
+   "chapterUrl": "https://comic.mkzcdn.com/chapter/content/?chapter_id={{$.chapter_id}}&comic_id=@get:{comic_id}",
+   "updateTime": "$..start_time\n@js:\"🕗 \"+java.timeFormat(result*1000)+\"    \"+(new Date(result*1000)>new Date()?\"❗️未发布\":\"\")"
+  },
+  "ruleContent": {
+   "content": "$.data[*].image\n@js:\nresult.split(\"\\n\").map(x=>'<img src=\"'+x+'\">').join(\"\\n\")"
+  },
+  "enabled": true
+ },
+ {
+  "bookSourceName": "51漫画",
+  "bookSourceUrl": "https://51acgs.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "自制,漫画",
+  "searchUrl": "https://51acgs.com/search/result/comics?keyword={{key}}&page={{page}}",
+  "ruleSearch": {
+   "bookList": ".comicRwdList > figure > a",
+   "bookUrl": "href",
+   "checkKeyWord": "++https://51acgs.com/comic/11778",
+   "coverUrl": "img@data-src",
+   "kind": "span@text",
+   "name": "figcaption@text"
+  },
+  "ruleBookInfo": {
+   "author": ".comic-content@a[href^=\"/creator\"]@text",
+   "coverUrl": ".comic-poser-wrap@img@data-src",
+   "intro": ".comic-cate-intor@html",
+   "kind": ".comic-content@.my-1@.text-gray-light@ownText##^.*：",
+   "lastChapter": ".my-1.-1@a@text",
+   "name": ".comic-content@.text-primary@text"
+  },
+  "ruleToc": {
+   "chapterList": "<js>\nconst scripts = Array.from(java.getElement(\"script\")).filter(e => String(e).includes('目录'));\nconst c = scripts[0];\n\nd = c \n  ? JSON.parse(c.html()).itemListElement.map(e => ({ title: e.name, url: e.url }))\n  : [{ title: book.name, url: java.getString(\".btn-read@href\", src) }];\n\nJSON.stringify(d);\n</js>\n$[*]",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": ".comics@img@html",
+   "imageDecode": "function decryptImage(src) {\n    const key = \"102_53_100_57_54_53_100_102_55_53_51_51_54_50_55_48\"\n        .split(\"_\").map(n => String.fromCharCode(parseInt(n))).join(\"\");\n    const iv  = \"57_55_98_54_48_51_57_52_97_98_99_50_102_98_101_49\"\n        .split(\"_\").map(n => String.fromCharCode(parseInt(n))).join(\"\");\n\n    const cipher = java.createSymmetricCrypto(\"AES/CBC/NoPadding\", key, iv)\n    return cipher.decrypt(src);\n}\ndecryptImage(result);"
+  },
+  "enabled": true
+ },
+ {
+  "bookSourceName": "🌟GAYRB腐漫画",
+  "bookSourceUrl": "https://gaygg.cc",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "https://gaygg.cc/search.html?keyword={{key}}",
+  "ruleSearch": {
+   "author": "class.book-list-info-bottom-item.0@text##^作者[：:]##",
+   "bookList": "ul.book-list li",
+   "bookUrl": "a[href^='/book/']@href",
+   "coverUrl": ".book-list-cover-img@data-original",
+   "intro": "class.book-list-info-desc.0@text",
+   "name": "a[title]@title"
+  },
+  "ruleBookInfo": {
+   "author": "class.detail-main-info-author.1 a@text",
+   "coverUrl": "img.manga-list-2-cover-img.lazy@data-original",
+   "intro": "meta[name='description']@content##漫画简介[：:](.+)##$1",
+   "kind": "class.detail-main-info-class.0 a@text"
+  },
+  "ruleToc": {
+   "chapterList": "ul.detail-list-1.detail-list-select li a",
+   "chapterName": "text",
+   "chapterUrl": "href"
+  },
+  "ruleContent": {
+   "content": "#cp_img img.lazy@data-original@js:result.split(String.fromCharCode(10)).filter(function(u){return u}).map(function(u){return '<img src=\\\"'+u.trim()+'\\\" >'}).join(String.fromCharCode(10))",
+   "imageStyle": "FULL",
+   "nextContentUrl": "ul.view-bottom-bar a[title=\"下一页\"]@href"
+  },
+  "header": "{  \"User-Agent\": \"Mozilla/5.0 (Linux; Android 8.1.0; JKM-AL00b Build/HUAWEIJKM-AL00b; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/66.0.3359.126 MQQBrowser/6.2 TBS/044807 Mobile Safari/537.36\"}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "拷贝漫画",
+  "bookSourceUrl": "https://www.kaobei.org/",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "statics/search.aspx?key={{java.encodeURI(key)}}&page={{page}}",
+  "ruleSearch": {
+   "author": "//p[@class=\"author\"]/span/a/text()\n@js: \na = result.split(\"\\n\");\nif (a.length > 1){\n    a.join(\", \");\n}else{ result }",
+   "bookList": "//ul[@class=\"mh-list col7\"]/li",
+   "bookUrl": "//div[@class=\"mh-item-tip\"]/a/@href",
+   "coverUrl": "//p[@class=\"mh-cover tip\"])/@style\n@js: result.match(/url\\((http[^)]+)\\)/)[1]",
+   "intro": "//div[@class=\"desc\"]/text()",
+   "lastChapter": "//div[@class=\"mh-item-tip-detali\"]/p[@class=\"chapter\"]/a/text()",
+   "name": "//div[@class=\"mh-item-tip\"]/a/@title"
+  },
+  "ruleBookInfo": {
+   "coverUrl": "//div[@class=\"cover\"]/img/@src",
+   "intro": "//p[@id=\"a_closes\"]/text()"
+  },
+  "ruleToc": {
+   "chapterList": "//div[@id=\"chapterlistload\"]/ul/li/a",
+   "chapterName": "/text()",
+   "chapterUrl": "/@href"
+  },
+  "ruleContent": {
+   "content": "@js: \nlet s = result.match(/var qTcms_S_m_murl_e=\"([^\"]+)\";/)[1]\ns = java.base64Decode(s);\ns = s.match(/http:\\/\\/.+?\\.jpg/g);\ns.map(a=>`<img src=\"${a}\">`).join(\"\\n\");"
+  },
+  "header": "{\n\"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3\",\n\"Referer\": \"https://www.kaobei.org/\",\n}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "🌟楠楠漫画",
+  "bookSourceUrl": "https://guiwb.nnmh.info",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "/index.php?m=&c=mh&a=load_searchpage,{\n  \"method\": \"POST\",\n  \"body\": \"page={{page}}&key={{key}}&paixu=&status=0&limitStatus=0\",\n  \"headers\": {\n    \"X-Requested-With\": \"XMLHttpRequest\"\n  }\n}",
+  "ruleSearch": {
+   "author": "$.author",
+   "bookList": "@json:$.info[*]",
+   "bookUrl": "@js:\"/home/book/index/id/\" + result.id + \"/\"",
+   "coverUrl": "@js:result.cover_pic + ',{\"headers\":{\"Referer\":\"https://guiwb.nnmh.info/\"}}'",
+   "intro": "$.summary",
+   "kind": "$.cateids",
+   "lastChapter": "$.maxepisodes",
+   "name": "$.title"
+  },
+  "ruleBookInfo": {
+   "author": "@css:.author@text##作者：",
+   "coverUrl": "@css:.cover-box .bg img@src@js:result + ',{\"headers\":{\"Referer\":\"https://guiwb.nnmh.info/\"}}'",
+   "intro": "@css:.article .body@text",
+   "kind": "@css:.label .item a@text",
+   "name": "@css:.cover-box .container .title@text",
+   "tocUrl": ""
+  },
+  "ruleToc": {
+   "chapterList": "#html_box .item",
+   "chapterName": "a@text",
+   "chapterUrl": "a@href"
+  },
+  "ruleContent": {
+   "content": "@js:\nvar html = src;\nvar m = html.match(/var encryptedData = \"([^\"]+)\"/);\nif (m) {\n  var enc = m[1];\n  var rawBytes = java.base64DecodeToByteArray(enc, 0);\n  var rawStr = java.bytesToStr(rawBytes, \"ISO-8859-1\");\n  var ivStr = rawStr.substring(0, 16);\n  var ctStr = rawStr.substring(16);\n  var ivBytes = java.strToBytes(ivStr, \"ISO-8859-1\");\n  var ctBytes = java.strToBytes(ctStr, \"ISO-8859-1\");\n  var key = 'tH1rU6qZ4vU1sK7pN1wO7mX4bY6dQ9gX'.substr(0, 32);\n  var cipher = java.createSymmetricCrypto(\"aes/cbc/pkcs7padding\", java.strToBytes(key), ivBytes);\n  var decBytes = cipher.decrypt(ctBytes);\n  var jsonStr = java.bytesToStr(decBytes, \"UTF-8\");\n  var urls = JSON.parse(jsonStr);\n  var imgs = [];\n  for (var i = 0; i < urls.length; i++) {\n    imgs.push('<img src=\"' + urls[i] + ',' + JSON.stringify({headers:{Referer:'https://guiwb.nnmh.info/'}}) + '\">');\n  }\n  imgs.join('');\n}",
+   "imageStyle": "FULL"
+  },
+  "header": "{  \"User-Agent\": \"Mozilla/5.0 (Linux; Android 8.1.0; JKM-AL00b Build/HUAWEIJKM-AL00b; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/66.0.3359.126 MQQBrowser/6.2 TBS/044807 Mobile Safari/537.36\", \"Referer\": \"https://guiwb.nnmh.info/}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "腐漫",
+  "bookSourceUrl": "https://www.fumanmanhua.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "https://www.fumanmanhua.com/search/index?keywords={{key}}",
+  "ruleSearch": {
+   "bookList": "class.comic-sort col3 search-result@li",
+   "bookUrl": "tag.a@href",
+   "name": "tag.a@tag.p@text",
+   "checkKeyWord": "我的"
+  },
+  "ruleBookInfo": {
+   "name": "class.comic-info@class.comic-detail@tag.h1@text"
+  },
+  "ruleToc": {
+   "chapterList": "class.weui-cells@tag.a",
+   "chapterUrl": "tag.a@href",
+   "chapterName": "class.weui-cell__bd@text"
+  },
+  "ruleContent": {
+   "content": "class.center padding5@img@html"
+  },
+  "enabled": true
+ },
+ {
+  "bookSourceName": "漫畫狗网",
+  "bookSourceUrl": "https://dogemanga.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "a",
+  "searchUrl": "https://dogemanga.com/?q={{key}}&o={{(page-1)*12}}",
+  "ruleSearch": {
+   "author": "tag.h6@text",
+   "bookList": ".site-scroll__list@.col-12 ",
+   "bookUrl": "tag.a.0@href",
+   "coverUrl": "tag.img@src@js:result + ',{\"headers\":{\"Referer\":\"https://dogemanga.com/\"}}'",
+   "intro": "tag.p@text",
+   "kind": "class.text-muted@text@js:String(result).match(/連載完結|連載中/)",
+   "lastChapter": "class.list-group-item.0@text",
+   "name": "tag.h5@text",
+   "wordCount": "class.mb-2@tag.li.1@text##.*連載狀態：|最快更新："
+  },
+  "ruleBookInfo": {
+   "author": "tag.h4@text",
+   "intro": ".site-card__brief@text",
+   "kind": "class.text-muted@text@js:String(result).match(/連載完結|連載中/)",
+   "lastChapter": "class.vstack.0@text",
+   "name": ".site-navbar__title@text"
+  },
+  "ruleToc": {
+   "chapterList": "-class.site-selector@option!0",
+   "chapterName": "text",
+   "chapterUrl": "value"
+  },
+  "ruleContent": {
+   "content": "class.site-reader__image@data-page-image-url@js:\nlist = result.split(\"\\n\");\nvar ref = JSON.stringify({headers: {Referer: \"https://dogemanga.com/\"}});\nvar html = \"\";\nfor (var i = 0; i < list.length; i++) {\n    var u = list[i].trim();\n    if (u) {\n        html += '<img src=\"' + u + ',' + ref + '\">\\n';\n    }\n}\nhtml;",
+   "imageStyle": "FULL"
+  },
+  "header": "{\"User-Agent\": \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.102 Safari/537.36 Edg/104.0.1293.70\"}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "野蛮漫画（优）",
+  "bookSourceUrl": "https://mhbao.colacomic.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "/search?searchkey={{key}}",
+  "ruleSearch": {
+   "bookList": "li.comic-item",
+   "bookUrl": "tag.a.0@href",
+   "coverUrl": "img@src@js:\nheader={\"Referer\":\"https://yemancomic.com\"}\nheaders={\"headers\":JSON.stringify(header)}\nresult=result+','+JSON.stringify(headers)",
+   "lastChapter": "span.chapter@text",
+   "name": "p.title@text"
+  },
+  "ruleBookInfo": {
+   "author": "span.author@text",
+   "intro": "id.js_desc_content@text",
+   "kind": "ul.types@tag.a@text",
+   "lastChapter": "span.last-chapter@text",
+   "name": "h1.name@textNodes"
+  },
+  "ruleToc": {
+   "chapterList": ".chapter-list@ul@li@a",
+   "chapterName": "text",
+   "chapterUrl": "href"
+  },
+  "ruleContent": {
+   "content": "@js:\nvar m = baseUrl.match(/\\/chapter\\/(\\d+)\\/(\\d+)\\.html/);\nvar aid = m[1];\nvar cid = m[2];\nvar api = 'https://mhbao.colacomic.com/api/comic/read/pics';\nvar UA = 'Mozilla/5.0 (Linux; Android 10; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/78.0.3904.108 Mobile Safari/537.36 SearchCraft/3.6.5 (Baidu; P1 9.0)';\nvar imgOpts = ',' + JSON.stringify({headers: {'User-Agent': UA, Referer: 'https://mhbao.colacomic.com/'}});\nvar urls = [];\nvar offset = 0;\nwhile (true) {\n  var opts = ',' + JSON.stringify({method: 'POST', headers: {'User-Agent': UA}, body: 'id=' + cid + '&aid=' + aid + '&offset=' + offset + '&limit=5'});\n  var res = java.ajax(api + opts);\n  var d = JSON.parse(res);\n  if (d.code != 1 || !d.data || !d.data.pic || d.data.pic.length === 0) break;\n  for (var i = 0; i < d.data.pic.length; i++) {\n    var p = d.data.pic[i].pic.trim();\n    urls.push('<img src=\"' + p + imgOpts + '\">');\n  }\n  if (d.data.pic.length < 5) break;\n  offset += 5;\n}\nresult = urls.join('\\n');",
+   "imageStyle": "FULL",
+   "nextContentUrl": ""
+  },
+  "header": "{\n  \"User-Agent\": \"Mozilla/5.0 (Linux; Android 10; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/78.0.3904.108 Mobile Safari/537.36 SearchCraft/3.6.5 (Baidu; P1 9.0)\"\n}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "🌟卡拉漫画",
+  "bookSourceUrl": "https://www.kalamanhua.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画书源",
+  "searchUrl": "/search/page/{{page}}/wd/{{key}}.html",
+  "ruleSearch": {
+   "author": ".stui-vodlist__detail p@text",
+   "bookList": "ul.stui-vodlist > li",
+   "bookUrl": "a@href",
+   "checkKeyWord": "",
+   "coverUrl": "a@data-original@js:result + ',{\"headers\":{\"Referer\":\"https://www.kalamanhua.com\"}}'",
+   "kind": ".pic-text1 b@text",
+   "lastChapter": ".pic-text b@text",
+   "name": "a@title"
+  },
+  "ruleBookInfo": {
+   "author": "##作者：([^<]+)<##$1###",
+   "coverUrl": ".stui-content__thumb img@data-original@js:result + ',{\"headers\":{\"Referer\":\"https://www.kalamanhua.com\"}}'",
+   "intro": "@js:\nvar names = [];\nvar tm = result.match(/data-toggle=\"tab\"[^>]*>([^<]+)</g);\nif (tm) {\n    for (var i = 0; i < tm.length; i++) {\n        var mm = tm[i].match(/>([^<]+)</);\n        if (mm) names.push(mm[1]);\n    }\n}\nvar n = names.length;\nif (n === 0) {\n    n = (result.match(/<ul class=\"stui-content__playlist/g) || []).length;\n    for (var z = 0; z < n; z++) {\n        names.push('线路' + (z + 1));\n    }\n}\nvar xu = '0';\ntry {\n    var cv = book.getVariable('custom');\n    if (cv != null && cv != '') {\n        xu = String(cv);\n    }\n} catch(e) {}\nif (xu == '0' || xu == '') {\n    var ov = String(book.variable || '');\n    if (ov != '') {\n        xu = ov;\n    }\n}\nvar list = '';\nfor (var i2 = 0; i2 < names.length; i2++) {\n    list += '◖' + i2 + '◗' + names[i2] + ' ';\n}\nvar lineInfo = '【线路列表】' + list.trim() + '\\n当前来源◖' + xu + '◗\\n（右上角书籍变量填 0-' + (n - 1) + ' 刷新切换线路）';\nvar desc = '';\nvar dcMatch = result.match(/<span class=\"detail-content\" style=\"display: none;\">([\\s\\S]*?)<\\/span>/);\nif (dcMatch) {\n    desc = dcMatch[1].trim();\n}\nif (!desc) {\n    var dsMatch = result.match(/<span class=\"detail-sketch\">([\\s\\S]*?)<\\/span>/);\n    if (dsMatch) {\n        desc = dsMatch[1].trim();\n    }\n}\nif (!desc) {\n    desc = java.getString('meta[name=\"description\"]@content') || '';\n}\nlineInfo + '\\n\\n📖 简介：' + desc;",
+   "kind": ".stui-content__detail@text##类型：(.+?)地区：##$1##",
+   "lastChapter": ".data span@text",
+   "name": "h1.title@text"
+  },
+  "ruleToc": {
+   "chapterList": "@js:\nvar xu = '0';\nvar mi = String(book.intro || '').match(/来源◖(\\d+)◗/);\nif (mi) { xu = mi[1]; }\ntry { var cv = book.getVariable('custom'); if (cv != null && cv != '') { xu = String(cv); } } catch(e) {}\nvar idx = parseInt(xu);\nif (!(idx >= 0)) { idx = 0; }\nvar doc = org.jsoup.Jsoup.parse(result);\nvar uls = doc.select('ul.stui-content__playlist');\nvar ul = uls.size() > 0 ? uls.get(Math.min(idx, uls.size() - 1)) : null;\nvar arr = [];\nif (ul) {\n  var as = ul.select('li a');\n  for (var i = 0; i < as.size(); i++) {\n    arr.push(JSON.stringify({name: as.get(i).text(), url: 'https://www.kalamanhua.com' + as.get(i).attr('href')}));\n  }\n}\narr;",
+   "chapterName": "$.name",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "@js:\nvar out = '';\nvar dbg = '';\nvar UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';\nvar REF = 'https://www.kalamanhua.com/';\nvar CDN = 'https://image.kalaimg.top';\n\nvar logd = function (m) {\n  try { java.log('KALA' + m); } catch (e0) {}\n};\n\nvar bodyOf = function (r) {\n  if (!r) { return ''; }\n  try { if (typeof r.body === 'function') { return String(r.body()); } } catch (e1) {}\n  try { if (typeof r.body === 'string') { return r.body; } } catch (e2) {}\n  try { return String(r); } catch (e3) { return ''; }\n};\n\nvar got = function (s) {\n  if (!s) { return false; }\n  return s.indexOf('data-src') >= 0;\n};\n\nvar tryGet = function (u, h) {\n  try { return bodyOf(java.get(u, h)); } catch (e) { dbg += '|gE'; return ''; }\n};\n\nvar tryAjax = function (u) {\n  try { return String(java.ajax(u)); } catch (e) { dbg += '|aE'; return ''; }\n};\n\nvar pickTok = function (s) {\n  if (!s) { return ''; }\n  var m = s.match(/(?:var|const|let) token = '([^']+)'/);\n  if (m) { return m[1]; }\n  var k = s.indexOf('token');\n  if (k < 0) { return ''; }\n  var q1 = s.indexOf(\"'\", k);\n  if (q1 >= 0) {\n    var q2 = s.indexOf(\"'\", q1 + 1);\n    if (q2 > q1) { return s.substring(q1 + 1, q2); }\n  }\n  q1 = s.indexOf('\"', k);\n  if (q1 >= 0) {\n    var q3 = s.indexOf('\"', q1 + 1);\n    if (q3 > q1) { return s.substring(q1 + 1, q3); }\n  }\n  return '';\n};\n\nvar html = String(result);\nif (html.indexOf('player_aaaa') < 0) {\n  var t0 = pickTok(html);\n  if (t0) {\n    var h2 = tryAjax(baseUrl + '?cf_verify=' + t0);\n    if (!h2) { h2 = tryGet(baseUrl + '?cf_verify=' + t0, {Referer: REF, 'User-Agent': UA}); }\n    dbg += '|heal=' + h2.length;\n    if (h2.indexOf('player_aaaa') >= 0) { html = h2; }\n  }\n}\n\nvar um = html.match(/\"url\":\"([0-9a-f]+)\"/);\nvar enc = um ? um[1] : '';\nvar tk = '';\nvar page = '';\n\nif (enc) {\n  var minUrl = CDN + '/play/min/' + enc;\n\n  page = tryGet(minUrl, {Referer: REF, 'User-Agent': UA});\n  dbg += '|p1=' + page.length;\n\n  if (!got(page)) {\n    page = tryAjax(minUrl);\n    dbg += '|a1=' + page.length;\n  }\n\n  if (!got(page)) {\n    tk = pickTok(page);\n    dbg += '|tk=' + (tk ? tk.length : 0);\n  }\n\n  if (!got(page)) {\n    if (tk) {\n      var q = minUrl + '?cf_verify=' + tk;\n      page = tryGet(q, {Referer: REF, 'User-Agent': UA, Cookie: 'omo_token=' + tk});\n      dbg += '|p2=' + page.length;\n      if (!got(page)) {\n        page = tryAjax(q);\n        dbg += '|a2=' + page.length;\n      }\n      if (!got(page)) {\n        page = tryGet(minUrl, {Referer: REF, 'User-Agent': UA, Cookie: 'omo_token=' + tk});\n        dbg += '|p3=' + page.length;\n      }\n    }\n  }\n\n  var imgs = page.match(/data-src=\"[^\"]+\"/g);\n  if (imgs) {\n    for (var i = 0; i < imgs.length; i++) {\n      var s = imgs[i].substring(10, imgs[i].length - 1);\n      var full = CDN + s;\n      if (full.indexOf('cf_verify=') < 0) {\n        if (tk) { full += '?cf_verify=' + tk; }\n      }\n      out += '<img src=\"' + full + '\">';\n    }\n    dbg += '|img=' + imgs.length;\n  } else {\n    out = 'ERR:no-img[' + page.length + ']' + dbg + '|h=' + page.substring(0, 40);\n  }\n} else {\n  out = 'ERR:no-enc' + dbg + '|h=' + html.substring(0, 40);\n}\n\nlogd(dbg);\nout;",
+   "imageStyle": "FULL"
+  },
+  "header": "{\n  \"User-Agent\": \"Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36\",\n  \"Referer\": \"https://www.kalamanhua.com\",\n  \"Cookie\": \"omo_token=93920aae5a549395; cf_human_passed=true\"\n}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "漫蛙",
+  "bookSourceUrl": "https://www.manwaye.cc",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "/api/search?type=mh&page={{page}}&pageSize=20&keyword={{key}}",
+  "ruleSearch": {
+   "author": "$.author",
+   "bookList": "$.data.list",
+   "bookUrl": "$.url",
+   "coverUrl": "$.cover",
+   "intro": "$.description",
+   "kind": "$.tags",
+   "lastChapter": "",
+   "name": "$.title",
+   "wordCount": ""
+  },
+  "ruleBookInfo": {
+   "author": "a[href*=\"author\"]@text",
+   "canReName": "",
+   "coverUrl": "",
+   "init": "",
+   "intro": "p.comic-desc@text",
+   "kind": "a[href^=\"/cate/\"]@text",
+   "lastChapter": "a#newch@text",
+   "name": "h2#page-title@text",
+   "tocUrl": "",
+   "wordCount": ""
+  },
+  "ruleToc": {
+   "chapterList": "#chapter-grid-container a",
+   "chapterName": "@data-title",
+   "chapterUrl": "@href@js:\nvar baseUrl = source.bookSourceUrl;\nif (baseUrl && baseUrl.length > 0 && baseUrl.charAt(baseUrl.length - 1) == '/') {\n    baseUrl = baseUrl.substring(0, baseUrl.length - 1);\n}\nvar a = result.split(\"/\")[3];\nvar b = baseUrl + '/api/comic/image/' + a + '?count=true&page=1';\nb;",
+   "isVip": "",
+   "isVolume": "",
+   "nextTocUrl": "",
+   "updateTime": "span@text##\\n##|"
+  },
+  "ruleContent": {
+   "content": "@js:\nvar imglist = JSON.parse(src).data.images;\nvar html = '';\nfor (var i = 0; i < imglist.length; i++) {\n    html += '<img src=\\\"' + imglist[i].url + '\\\">\\\n';\n}\nhtml",
+   "imageDecode": "(function() {\n    var isImage = (result[0] === 0xFF && result[1] === 0xD8) ||\n        (result[0] === 0x89 && result[1] === 0x50) ||\n        (result[0] === 0x47 && result[1] === 0x49) ||\n        (result[0] === 0x52 && result[1] === 0x49);\n    if (isImage) return result;\n    var iv = result.slice(0, 16);\n    var ciphertext = result.slice(16);\n    var key = java.strToBytes('0B6666A0-BB59-1381-B746-a0E4C9AC');\n    var cipher = java.createSymmetricCrypto('AES/CBC/PKCS5Padding', key, iv);\n    return cipher.decrypt(ciphertext);\n})();",
+   "imageStyle": "",
+   "nextContentUrl": "@js:\nvar pageList = [];\nlet Data = JSON.parse(src).data.pagination;\nvar page = Math.ceil(Data.total / Data.page_size);\nfor (let i = 2;i <= page;i++) {\npageList.push(baseUrl.replace(\"page=1\",`page=${i}`));\n}\npageList;",
+   "replaceRegex": "",
+   "sourceRegex": "",
+   "webJs": ""
+  },
+  "header": "{  \"User-Agent\": \"Mozilla/5.0 (Linux; Android 8.1.0; JKM-AL00b Build/HUAWEIJKM-AL00b; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/66.0.3359.126 MQQBrowser/6.2 TBS/044807 Mobile Safari/537.36\"}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "🔞开心看漫画",
+  "bookSourceUrl": "https://kxmanhua.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "🔞漫画",
+  "searchUrl": "https://kxmanhua.com/manga/search?keyword={{key}}&page={{page}}",
+  "ruleSearch": {
+   "author": "",
+   "bookList": "class.product__item",
+   "bookUrl": "class.product__item__text@tag.h6@tag.a@href##^##https://kxmanhua.com",
+   "checkKeyWord": "爱",
+   "coverUrl": "class.product__item__pic@data-setbg",
+   "intro": "",
+   "kind": "class.epgreen@text||class.ep@text",
+   "lastChapter": "",
+   "name": "class.product__item__text@tag.h6@tag.a@text",
+   "updateTime": "",
+   "wordCount": ""
+  },
+  "ruleBookInfo": {
+   "author": "class.anime__details__title@tag.span.0@text##作者：\\s*##",
+   "canReName": "",
+   "coverUrl": "class.anime__details__pic@data-setbg",
+   "downloadUrls": "",
+   "init": "",
+   "intro": "class.anime__details__text@tag.p.1@text",
+   "kind": "class.anime__details__widget@tag.li.0@tag.a@text",
+   "lastChapter": "",
+   "name": "class.anime__details__title@tag.h3@text",
+   "tocUrl": "",
+   "updateTime": "class.anime__details__widget@tag.li.1@text##最近更新：\\s*##",
+   "wordCount": ""
+  },
+  "ruleToc": {
+   "chapterList": "-class.chapter_list@tag.a",
+   "chapterName": "@text",
+   "chapterUrl": "@href##^##https://kxmanhua.com",
+   "formatJs": "",
+   "isPay": "",
+   "isVip": "",
+   "isVolume": "",
+   "nextTocUrl": "",
+   "preUpdateJs": "",
+   "updateTime": ""
+  },
+  "ruleContent": {
+   "callBackJs": "",
+   "content": "class.blog__details__content@tag.img@html\n",
+   "imageDecode": "",
+   "imageStyle": "FULL",
+   "nextContentUrl": "",
+   "payAction": "",
+   "replaceRegex": "",
+   "sourceRegex": "",
+   "subContent": "",
+   "title": "class.view-fix-top-bar-title@text",
+   "webJs": ""
+  },
+  "header": "@js:\nJSON.stringify({\n\"User-Agent\": \"Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36\",\n\"Referer\": \"https://kxmanhua.com/\"\n})\n",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "🔞鸟鸟韩漫",
+  "bookSourceUrl": "https://nnhm91.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "🔞漫画",
+  "searchUrl": "https://nnhm91.com/search/{{key}}/page/{{page}}",
+  "ruleSearch": {
+   "author": "",
+   "bookList": "class.col_3_1@tag.li",
+   "bookUrl": "class.ImgA@href",
+   "checkKeyWord": "人妻",
+   "coverUrl": "class.ImgA@tag.picture@tag.source@srcset",
+   "intro": "",
+   "kind": "",
+   "lastChapter": "class.info@tag.a@text||class.info@text",
+   "name": "class.txtA@text",
+   "updateTime": "class.info@text",
+   "wordCount": ""
+  },
+  "ruleBookInfo": {
+   "author": "class.sub_r@tag.p.2@text",
+   "canReName": "",
+   "coverUrl": "id.Cover@tag.img@src",
+   "downloadUrls": "",
+   "init": "",
+   "intro": "class.txtDesc@text##介绍[:：]\\s*##",
+   "kind": "class.sub_r@tag.p.3@tag.a@text",
+   "lastChapter": "",
+   "name": "class.Introduct@tag.h1@text##《|》",
+   "tocUrl": "",
+   "updateTime": "class.sub_r@class.date@text@js:result.replace(/^连载中\\s*/,'').replace(/^已完结\\s*/,'');",
+   "wordCount": ""
+  },
+  "ruleToc": {
+   "chapterList": "-class.Drama@tag.li",
+   "chapterName": "@tag.a@text",
+   "chapterUrl": "@tag.a@href##^##https://nnhm91.com",
+   "formatJs": "",
+   "isPay": "",
+   "isVip": "",
+   "isVolume": "",
+   "nextTocUrl": "",
+   "preUpdateJs": "",
+   "updateTime": ""
+  },
+  "ruleContent": {
+   "callBackJs": "",
+   "content": "class.view-imgBox@tag.img@data-src\n@js:\nvar pool = ['p4.nnpic.xyz','p6.nnpic.xyz','p8.nnpic.xyz','p9.nnpic.xyz','p10.nnpic.xyz','p11.nnpic.xyz'];\nvar bad = ['img.nnpic.xyz','p4.nnpic.xyz','p6.nnpic.xyz','p8.nnpic.xyz','p9.nnpic.xyz','p10.nnpic.xyz','p11.nnpic.xyz'];\nvar urls = result.split('\\n').filter(Boolean);\nvar out = [];\nfor (var i = 0; i < urls.length; i++) {\n  var u = urls[i];\n  var m = u.match(/^https?:\\/\\/([^\\/]+)(\\/.*)$/);\n  if (m && bad.indexOf(m[1]) >= 0) {\n    u = 'https://' + pool[Math.floor(Math.random()*pool.length)] + m[2];\n  }\n  out.push('<img src=\"' + u + '\">');\n}\nout.join('\\n');\n",
+   "imageDecode": "",
+   "imageStyle": "FULL",
+   "nextContentUrl": "",
+   "payAction": "",
+   "replaceRegex": "",
+   "sourceRegex": "",
+   "subContent": "",
+   "title": "class.BarTit@tag.h1@text",
+   "webJs": ""
+  },
+  "header": "@js:\nJSON.stringify({\n\"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\",\n\"Referer\": \"https://nnhm91.com/\"\n})\n",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "奇漫屋（qimanwu）",
+  "bookSourceUrl": "https://m.qimanwu.app",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "/search/{{encodeURIComponent(key)}}/{{page}}",
+  "ruleSearch": {
+   "author": "p.2@text",
+   "bookList": ".rankList@li",
+   "bookUrl": "a@href",
+   "coverUrl": "img.0@src@js:\nvar hh = JSON.stringify({\"headers\": {\n  \"User-Agent\": java.getWebViewUA(),\n  \"Referer\": baseUrl,\n  \"cookie\": cookie.getCookie(baseUrl)\n}});\nresult + \",\" + hh",
+   "lastChapter": "p.1@text",
+   "name": "p.0@text"
+  },
+  "ruleBookInfo": {
+   "author": "p.1@text",
+   "canReName": "1",
+   "coverUrl": "img.cover@src@js:\nvar hh = JSON.stringify({\"headers\": {\n  \"User-Agent\": java.getWebViewUA(),\n  \"Referer\": baseUrl,\n  \"cookie\": cookie.getCookie(baseUrl)\n}});\nresult + \",\" + hh",
+   "init": "@js:\nif(/很遗憾，该漫画不存在/.test(result)){\n  result = \"<nocomic>很遗憾，该漫画不存在或章节已被删除</nocomic>\"\n}\nresult",
+   "intro": "p.5@text||nocomic@text",
+   "kind": "p.2@a@text",
+   "lastChapter": "p.3@text##更新至：",
+   "name": "p.0@text||nocomic@text"
+  },
+  "ruleToc": {
+   "chapterList": ".chapterList li a",
+   "chapterName": "text",
+   "chapterUrl": "href"
+  },
+  "ruleContent": {
+   "content": "@js:\n(() => {\n  var match = result.match(/params\\s*=\\s*['\"]([^'\"]+)['\"]/);\n  if (!match) return \"\";\n  var params = match[1];\n  \n  var allBytes = java.base64DecodeToByteArray(params);\n  var ivBytes = allBytes.slice(0, 16);\n  var ctBytes = allBytes.slice(16);\n  var key = \"9S8$vJnU2ANeSRoF\";\n  key = java.strToBytes(key);\n  var cipher = java.createSymmetricCrypto(\"AES/CBC/PKCS5Padding\", key, ivBytes);\n  var jsonStr = cipher.decryptStr(ctBytes);\n  var {images} = JSON.parse(jsonStr);\n  \n  var hh = JSON.stringify({\"headers\": {\n    \"User-Agent\": java.getWebViewUA(),\n    \"Referer\": baseUrl,\n    \"cookie\": cookie.getCookie(baseUrl)\n  }});\n\n  return images.map(x=>`<img src=\"${x+','+hh}\">`).join(\"\");\n})();",
+   "imageStyle": "FULL"
+  },
+  "header": "{\n  \"User-Agent\": \"{{java.getWebViewUA()}}\",\n  \"Referer\": \"{{baseUrl}}\",\n  \"cookie\": \"{{cookie.getCookie(baseUrl)}}\"\n}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "（禁漫）三四娱乐",
+  "bookSourceUrl": "https://www.3004gg.com/",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "/?s={{key}}",
+  "ruleSearch": {
+   "author": "rel.tag@text",
+   "bookList": "class.box@class.excerpt excerpt-one",
+   "bookUrl": "h2@a@href",
+   "checkKeyWord": "行动扫码",
+   "coverUrl": "img@src",
+   "intro": "class.post-tags@text",
+   "kind": "//*[@rel=\"tag\"][3]/text()",
+   "lastChapter": "class.time@text",
+   "name": "a.1@title",
+   "wordCount": "class.subtitle@text"
+  },
+  "ruleBookInfo": {
+   "coverUrl": "class.c-img@img@src",
+   "intro": "class.dis@text",
+   "kind": "rel.category tag@text",
+   "lastChapter": "class.subtitle.0@text",
+   "name": "class.article-title@a.0@text"
+  },
+  "ruleToc": {
+   "chapterList": "class.chapter-link",
+   "chapterName": "text",
+   "chapterUrl": "href"
+  },
+  "ruleContent": {
+   "content": "class.lazy placeholder-img@all",
+   "nextContentUrl": "text.下一页@href"
+  },
+  "header": "{\"User-Agent\": \"Mozilla/5.0 (Linux; Android 12; 2112123AC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.104 Mobile Safari/537.36\",\"Referer\":\"https://www.3004gg.com/\"}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "再漫画🌟",
+  "bookSourceUrl": "https://manhua.zaimanhua.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "@js:\n'https://v4api.zaimanhua.com/app/v1/search/index?keyword=' + encodeURIComponent(key) + '&source=0&page=' + page + '&size=24&channel=pc&app_name=zmh&version=1.0.0&timestamp=0&uid=0'",
+  "ruleSearch": {
+   "author": "$.authors",
+   "bookList": "@Json:data.list",
+   "bookUrl": "$.comic_py@js:'https://v4api.zaimanhua.com/api/v1/comic2/comic/detail?comic_py='+result+'&channel=pc&app_name=zmh&version=1.0.0&timestamp=0&uid=0'",
+   "checkKeyWord": "半调子恋人",
+   "coverUrl": "$.cover",
+   "intro": "@js:\nvar d = (typeof result === 'string') ? JSON.parse(result) : result;\n'状态：' + (d.status || '') + '\\n更新：' + (d.last_update_chapter_name || '')",
+   "kind": "$.types",
+   "lastChapter": "$.last_update_chapter_name",
+   "name": "$.title"
+  },
+  "ruleBookInfo": {
+   "author": "@js:\nvar d = (typeof result === 'string') ? JSON.parse(result) : result;\nvar a = d.data.comicInfo.authorsTagList || [];\nvar s = [];\nfor (var i = 0; i < a.length; i++) { s.push(a[i].tagName); }\ns.join(' / ')",
+   "coverUrl": "@Json:data.comicInfo.cover",
+   "intro": "@js:\nvar d = (typeof result === 'string') ? JSON.parse(result) : result;\nvar ci = d.data.comicInfo;\nfunction arr(li) {\n  var s = [];\n  for (var i = 0; i < li.length; i++) { s.push(li[i].tagName); }\n  return s.join(' / ');\n}\nvar out = '';\nout += '  🎯 状态：' + (arr(ci.statusTagList || []) || '未知') + '\\n';\nout += '🔥 人气：' + (ci.hotNumStr || ci.hotNum || '?') + '\\n';\nout += '📜 简介：\\n' + (ci.description || '暂无简介');\nresult = out;",
+   "kind": "@js:\nvar d = (typeof result === 'string') ? JSON.parse(result) : result;\nvar ci = d.data.comicInfo;\nvar tags = [];\nvar c = ci.cateTagList || [];\nvar t = ci.themeTagList || [];\nfor (var i = 0; i < c.length; i++) { tags.push(c[i].tagName); }\nfor (var j = 0; j < t.length; j++) { tags.push(t[j].tagName); }\ntags.join(' / ')",
+   "lastChapter": "@Json:data.comicInfo.lastUpdateChapterName",
+   "name": "@Json:data.comicInfo.title"
+  },
+  "ruleToc": {
+   "chapterList": "@js:\nvar d = (typeof result === 'string') ? JSON.parse(result) : result;\nvar ci = d.data.comicInfo;\nvar cid = ci.id;\nvar vols = ci.chapterList || [];\nvar arr = [];\nfor (var i = 0; i < vols.length; i++) {\n  var chs = vols[i].data || [];\n  for (var j = 0; j < chs.length; j++) {\n    var ch = chs[j];\n    var u = 'https://v4api.zaimanhua.com/api/v1/comic2/chapter/detail?comic_id=' + cid + '&chapter_id=' + ch.chapter_id + '&channel=pc&app_name=zmh&version=1.0.0&timestamp=0&uid=0';\n    arr.push({name: ch.chapter_title, order: ch.chapter_order, url: u});\n  }\n}\narr.sort(function(a, b) { return (a.order || 0) - (b.order || 0); });\nvar out = [];\nfor (var k = 0; k < arr.length; k++) { out.push(JSON.stringify({name: arr[k].name, url: arr[k].url})); }\nout;",
+   "chapterName": "$.name",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "@js:\nvar d = (typeof result === 'string') ? JSON.parse(result) : result;\nvar ci = d.data.chapterInfo;\nvar pus = ci.page_url || [];\nvar out = [];\nfor (var i = 0; i < pus.length; i++) { out.push('<img src=\\\"' + pus[i] + '\\\">'); }\nout.join('\\n')",
+   "imageStyle": "FULL"
+  },
+  "header": "{  \"User-Agent\": \"Mozilla/5.0 (Linux; Android 8.1.0; JKM-AL00b Build/HUAWEIJKM-AL00b; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/66.0.3359.126 MQQBrowser/6.2 TBS/044807 Mobile Safari/537.36\"}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "🎨包子漫画",
+  "bookSourceUrl": "https://cn.bzmanga.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画书源 🎨",
+  "searchUrl": "https://cn.bzmanga.com/search?q={{key}}",
+  "ruleSearch": {
+   "author": "class.tags text-truncate@text",
+   "bookList": "class.comics-card pure-u-1-2 pure-u-sm-1-2 pure-u-md-1-4 pure-u-lg-1-6",
+   "bookUrl": "class.comics-card pure-u-1-2 pure-u-sm-1-2 pure-u-md-1-4 pure-u-lg-1-6@tag.a@href",
+   "coverUrl": "tag.amp-img.0@src",
+   "kind": "class.tabs cls@text",
+   "lastChapter": "class.comics-chapters__item.0@text",
+   "name": "class.comics-card__title text-truncate@text"
+  },
+  "ruleBookInfo": {
+   "author": "class.comics-detail__author@text",
+   "coverUrl": "tag.amp-img.0@src",
+   "init": "<js>java.t2s(result)</js>",
+   "intro": "class.comics-detail__desc overflow-hidden@text",
+   "kind": "class.tag-list@text",
+   "lastChapter": "class.comics-chapters__item.0@text",
+   "name": "class.comics-detail__title@text",
+   "tocUrl": "class.pure-u-1-1 pure-u-sm-1-2 pure-u-md-1-3 pure-u-lg-1-4 comics-chapters@tag.a@harf@class.comics-chapters__item@text"
+  },
+  "ruleToc": {
+   "chapterList": "<js>java.t2s(result)</js>\nclass.pure-u-1-1 pure-u-sm-1-2 pure-u-md-1-3 pure-u-lg-1-4 comics-chapters",
+   "chapterName": "tag.span@text",
+   "chapterUrl": "tag.a@href"
+  },
+  "ruleContent": {
+   "content": "@js:\nlet n =java.getElements('class.comic-contain@amp-img')\nlet c=[];\n    Array.from(n).forEach(x=>{\n    c.push({\n    link:x.attr('data-src')\n})    \n}) \nvar imgTags = c.map(item => `<img src=\"${item.link}\">`).join('\\n');\n    imgTags;",
+   "imageStyle": "FULL",
+   "title": "class.title"
+  },
+  "header": "@js:\nJSON.stringify({\n\"Accept-Language\": \"zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7\"\n})",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "漫画团",
+  "bookSourceUrl": "https://www.manhuatuan.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "https://www.manhuatuan.com/search?q={{key}}&page={{page}}",
+  "ruleSearch": {
+   "bookList": "ul.comic-list2 li",
+   "bookUrl": "a.lazy@href",
+   "checkKeyWord": "斗破苍穹",
+   "coverUrl": "a.lazy@data-original",
+   "intro": "p.info@text",
+   "name": "span.tit@text"
+  },
+  "ruleBookInfo": {
+   "author": "div.comic-info:nth-of-type(1) p.info-text@text",
+   "coverUrl": "img.comic-thumb@src",
+   "intro": "div.comic-desc div.info-text@text",
+   "kind": "span.has-text-success@text",
+   "lastChapter": "span.new-chapter a@text",
+   "name": "h2.comic-name@text"
+  },
+  "ruleToc": {
+   "chapterList": "div.comic-chapter li a",
+   "chapterName": "@text",
+   "chapterUrl": "@href"
+  },
+  "ruleContent": {
+   "content": "<js>(function(){\nvar html=String(result);\nvar m=html.match(/params\\s*=\\s*'([^']+)'/);\nif(!m){return ''}\nvar raw=Packages.java.util.Base64.getDecoder().decode(m[1]);\nvar iv=Packages.java.util.Arrays.copyOfRange(raw,0,16);\nvar ct=Packages.java.util.Arrays.copyOfRange(raw,16,raw.length);\nvar key=new Packages.java.lang.String('5V&RoR%Jf@pJPydF').getBytes('UTF-8');\nvar c=Packages.javax.crypto.Cipher.getInstance('AES/CBC/PKCS5Padding');\nc.init(Packages.javax.crypto.Cipher.DECRYPT_MODE,new Packages.javax.crypto.spec.SecretKeySpec(key,'AES'),new Packages.javax.crypto.spec.IvParameterSpec(iv));\nvar d=JSON.parse(new Packages.java.lang.String(c.doFinal(ct),'UTF-8'));\nif(d.comic_status&&d.comic_status!=='normal'){return ''}\nvar arr=d.chapter_images||[];\nvar host=(d.images_hosts&&d.images_hosts[0])||'';\nvar USE_PROXY=false;\nvar out=[];\nfor(var i=0;i<arr.length;i++){\nvar u=String(arr[i]);\nif(USE_PROXY&&host){\nu=host+'/'+Packages.java.util.Base64.getEncoder().encodeToString(new Packages.java.lang.String(u).getBytes('UTF-8'));\n}\nout.push('<img src=\"'+u+'\"/>');\n}\nreturn out.join('\\n');\n})()</js>",
+   "imageStyle": "max-width:100%;height:auto;"
+  },
+  "header": "{\"User-Agent\": \"Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36\"}",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "G社漫画/包子漫画",
+  "bookSourceUrl": "https://manhuafree.com",
+  "bookSourceType": 2,
+  "bookSourceGroup": "漫画",
+  "searchUrl": "{{bhost()}}/s/{{key}}?page={{page}}",
+  "ruleSearch": {
+   "bookList": ".grid-cols-3@.pb-2",
+   "bookUrl": "a@href",
+   "coverUrl": "img@src",
+   "name": "h3@text"
+  },
+  "ruleBookInfo": {
+   "author": ".text-small@a@span@text##\\s",
+   "intro": "<js>\nvar novelIntro=({title,author,genre,score,desc})=>['','✧*̥₊˚‧☆･ﾟ'.repeat(3),`📖书名：《${title}》`,`👤作者：${author}`,`🏷️类型：${genre}`,`✨最新章节：${latestChapterTitle}`,'✦ ─────────────── ✦',`${desc}`,'❈'.padEnd(20,'～*')].join('\\n').replace(/^/gm,'　　');\nvar latestChapterTitle=`{{@@.my-unit-md@span@text}}`\nvar intro=`{{@@.text-medium@text##最近章節}}`\nnovelIntro({\n    \"title\": book.name,\n    \"author\": book.author,\n    \"genre\": book.kind,\n    \"latestChapterTitle\":latestChapterTitle,\n    \"desc\": intro\n})\n</js>##(^|[。！？]+[”」）】]?)##$1<br>",
+   "kind": ".text-sm:nth-child(3)>a@text&&.text-xl@span@text&&.py-1:nth-child(4) > a:nth-child(n+1)@text<js>java.t2s(result);</js>##\\[|\\]",
+   "lastChapter": ".my-unit-md@span@text",
+   "name": ".text-xl@textNodes",
+   "tocUrl": "<js>\n\nvar mid=src.match(/data\\-mid\\=\"(\\d+)\"/)[1];\njava.put(\"mid\",mid)\nvar r=`https://api-get-v3.mgsearcher.com/api/manga/get?mid=${mid}&mode=all`\nr;\n\n</js>"
+  },
+  "ruleToc": {
+   "chapterList": ".chapters[*]",
+   "chapterName": ".title",
+   "chapterUrl": "<js>\nvar mid=java.get(\"mid\")\nvar id=`{{$..id}}`\nvar r=`https://v2.apikk.top/api/v2/chapter/getinfo?m=${mid}&c=${id}`\nr;\n</js>",
+   "updateTime": ".updatedAt"
+  },
+  "ruleContent": {
+   "content": "<js>\nvar data=JSON.parse(result)\nvar encrypted=data.data.info.images.images;\n\n\nfunction decryptImages(encrypted) {\n    var prefix = \"J7r\";\n    var suffix = \"nQ\";\n    var kD = \"kD\";\n    var W4s = \"W4s\";\n    var STEP = 7;\n\n    // 注意：这两个字符串必须完全一致，一个字符都不能少/错\n    // source 用来 indexOf\n    var source = \"_-9876543210abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\";\n    // target 用来取字符\n    var target = \"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_\";\n\n  //  java.log(\"source.len=\" + source.length + \" target.len=\" + target.length); // 都应该是 64\n\n    if (!encrypted.startsWith(prefix) || !encrypted.endsWith(suffix)) {\n        throw new Error(\"x2 prefix/suffix\");\n    }\n\n    var body = encrypted.slice(prefix.length, encrypted.length - suffix.length);\n    var L = body.length - kD.length - W4s.length;\n    var cols = Math.floor(L / 3);\n    var rem2 = Math.floor((L - cols) / 2);\n    var rest = L - cols - rem2;\n\n   // java.log(\"L=\" + L + \" cols=\" + cols + \" rem2=\" + rem2 + \" rest=\" + rest);\n\n    var a = body.slice(0, rem2);\n    var b = body.slice(rem2, rem2 + 2);\n    var c = body.slice(rem2 + 2, rem2 + 2 + rest);\n    var d = body.slice(rem2 + 2 + rest, rem2 + 2 + rest + 3);\n    var e = body.slice(rem2 + 2 + rest + 3);\n\n   // java.log(\"b=\" + b + \" d=\" + d + \" e.len=\" + e.length);\n    if (b !== kD || d !== W4s || e.length !== cols) {\n        throw new Error(\"x4 marker\");\n    }\n\n    // 1. 拼接\n    var input = e + a + c;\n    java.log(\"input[0..40]=\" + input.slice(0, 40));\n\n    // 2. 每 7 字符一组，奇数索引反转\n    var swapped = \"\";\n    for (var i = 0, gi = 0; i < input.length; i += STEP, gi++) {\n        var part = input.slice(i, i + STEP);\n        if (gi % 2 === 1) {\n            part = part.split(\"\").reverse().join(\"\");\n        }\n        swapped += part;\n    }\n    //java.log(\"swapped[0..40]=\" + swapped.slice(0, 40));\n\n    // 3. 映射（这里最容易出问题）\n    var mapped = \"\";\n    for (var j = 0; j < swapped.length; j++) {\n        var ch = swapped.charAt(j);          // 用 charAt 更稳\n        var idx = source.indexOf(ch);\n        if (idx < 0) {\n            java.log(\"bad char at \" + j + \" : [\" + ch + \"] code=\" + ch.charCodeAt(0));\n            throw new Error(\"x1\");\n        }\n        mapped += target.charAt(idx);\n    }\n\n   // java.log(\"mapped[0..60]=\" + mapped.slice(0, 60));\n    // 正常应该类似：W3sib3JkZXIiOjAsInVybCI6Ii9ocC9tYW5qaXdhbmppYWRlZGk...\n\n    // 4. base64url → 标准 base64\n    var b64 = mapped.replace(/-/g, \"+\").replace(/_/g, \"/\");\n    while (b64.length % 4 !== 0) b64 += \"=\";\n    var jsonStr=java.base64Decode(b64);\n    return JSON.parse(jsonStr)\n}\n\nvar imageList=decryptImages(encrypted)\n//java.log(imageList)\n\nvar imgTags = imageList.map(item => `<img src=\"https://t-nd2-1.6wm.top${item.url}\">`).join('\\n');\nimgTags;\n\n</js>"
+  },
+  "header": "<js>\nheaders={\"Referer\":baseUrl};\nJSON.stringify(headers)\n</js>",
+  "enabled": true
+ },
+ {
+  "bookSourceName": "🍅番茄漫画(APP)",
+  "bookSourceUrl": "https://fanqienovel.com##漫画版",
+  "bookSourceType": 2,
+  "bookSourceGroup": "番茄,漫画,AI",
+  "searchUrl": "https://api.fanqiesdk.com/api/novel/channel/homepage/search/search/v1/?q={{key}}&offset={{(page-1)*10}}&enterfrom_aid=&enter_from=inner_search&app_name=news_article&version_name=7.0.8&app_version=7.0.8&channel=tt_huawei2019_yz&version_code=708&device_platform=android&parent_enterfrom=novel_list&novel_host=&aid=13&scm_version=1.0.0.4112&device_type=25053RT47C&device_brand=Redmi&language=zh&os_api=35&os_version=15&openudid=fqmanga&update_version_code=70899&plugin=0&tma_jssdk_version=1.10.0.0&rom_version=miui__os2.0.209.0.volcnxm",
+  "ruleSearch": {
+   "author": "$.author",
+   "bookList": "@js:(function(){var d=JSON.parse(String(result));var rd=(d.data&&d.data.ret_data)||[];var out=[];var mg=[];var other=[];for(var i=0;i<rd.length;i++){var it=rd[i];var t=String(it.title||'').split('<em>').join('').split('</em>').join('');if(!t)continue;var o=JSON.stringify({name:t,author:String(it.author||''),kind:String(it.category||''),intro:String(it.abstract||''),coverUrl:String(it.thumb_url||''),bookUrl:'https://fanqienovel.com/page/'+String(it.book_id)});if(String(it.author||'').indexOf('番茄漫画')>=0||String(it.category||'').indexOf('漫画')>=0||String(it.category||'').indexOf('漫改')>=0){mg.push(o);}else{other.push(o);}}out=mg.concat(other);return out;})()",
+   "bookUrl": "$.bookUrl",
+   "checkKeyWord": "非人哉",
+   "coverUrl": "$.coverUrl",
+   "intro": "$.intro",
+   "kind": "$.kind",
+   "name": "$.name"
+  },
+  "ruleBookInfo": {
+   "author": "$.author",
+   "coverUrl": "$.coverUrl",
+   "init": "@js:(function(){var m=String(baseUrl).match(/([0-9]{15,})/);var bid=m?m[1]:'';if(!bid){throw new Error('无效书籍ID');}var r=FQ_mgInfo2(java,source,bid);if(!r.chapters)throw new Error('未找到书籍或目录为空');r.tocUrl='https://fanqienovel.com/page/'+bid;return JSON.stringify(r);})()",
+   "intro": "$.intro",
+   "kind": "$.kind",
+   "lastChapter": "$.lastChapter",
+   "name": "$.name",
+   "tocUrl": "$.tocUrl"
+  },
+  "ruleToc": {
+   "chapterList": "@js:(function(){var m=String(baseUrl).match(/([0-9]{15,})/);var bid=m?m[1]:'';if(!bid){throw new Error('无效书籍ID');}var l=FQ_mgToc(java,source,bid);if(!l.length)throw new Error('目录为空');var out=[];for(var i=0;i<l.length;i++){out.push(JSON.stringify({name:l[i].name,url:'https://fanqienovel.com/page/'+bid+String.fromCharCode(35)+l[i].url}));}return out;})()",
+   "chapterName": "$.name",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "@js:(function(){var m=String(baseUrl).match(/^https?:\\/\\/[^/]+\\/page\\/([0-9]{15,})/);var bid=m?m[1]:'';var m2=String(baseUrl).match(/#([0-9]+)$/);var item=m2?m2[1]:'';if(!bid||!item)throw new Error('参数错误');var h=FQ_mgHtmlQuiet(java,source,bid,item);if(h)return h;var t=FQ_mgText(java,source,bid,item);if(t)return t;throw new Error(FQ_MSG_NOMG);})()",
+   "imageStyle": "FULL"
+  },
+  "enabled": true
+ }
+]

@@ -33,9 +33,12 @@
 				<span>Legado 漫画书源（JSON 或网址，支持一次多个）</span>
 				<textarea id="source-input" rows="4" placeholder="粘贴书源 JSON，或 https://…/7978.json"></textarea>
 			</label>
-			<button id="load-source" class="btn block">加载书源</button>
+			<div class="row" style="gap:8px">
+				<button id="load-builtin" class="btn primary" style="flex:1">加载内置源</button>
+				<button id="load-source" class="btn" style="flex:1">加载书源</button>
+			</div>
 			<div id="source-info" class="source-info hidden"></div>
-			<p class="note" style="margin-top:8px">一次粘贴多个书源（JSON 数组）时，搜索会并行查询所有漫画源，结果按站点列在表格里。没有书源也可以切到「链接下载」。</p>
+			<p class="note" style="margin-top:8px">已内置一批漫画源，打开页面会自动载入，直接输入书名搜索即可。想换用自己的源，粘贴书源 JSON（支持数组，搜索会并行查询全部漫画源）。</p>
 
 			<div class="divider"></div>
 
@@ -102,6 +105,7 @@
 		<div id="jobs" class="jobs">
 			<p class="empty-small">还没有下载记录</p>
 		</div>
+		<p id="jobs-status" class="hint"></p>
 	</section>
 </main>
 

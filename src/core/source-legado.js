@@ -121,9 +121,17 @@ function collectRows(doc, bookListRule, ctx) {
 		}
 		return [];
 	}
+	// 不少书源在真正的选择器前包了一段 <js>（常用于 java.t2s 繁简转换之类），
+	// 例如：
+	//   <js>java.t2s(result)</js>
+	//   class.pure-u-1-1 ... comics-chapters
+	// 早先没有剥离，整条串被当成一个畸形选择器 → 0 命中，
+	// 表现就是「这本书目录获取不到」。这里先剥掉 <js>…</js> 再解析选择器。
+	const cleaned = jsRule.replace(/<js>[\s\S]*?<\/js>/gi, '').trim() || jsRule.trim();
+
 	// 简单规则直接用 extractLegado 的元素返回能力
 	const { parseRuleString, navigate } = getLegadoInternals();
-	const parsed = parseRuleString(bookListRule);
+	const parsed = parseRuleString(cleaned);
 	let elements = [doc];
 	for (const seg of parsed.nav) {
 		elements = navigate(elements, seg, doc);

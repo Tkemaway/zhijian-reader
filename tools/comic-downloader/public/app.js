@@ -14,8 +14,16 @@ const state = {
 	book: null, // { title, author, chapters, bookUrl, source }
 	scan: null, // { title, images, chapters, nextUrl, finalUrl }
 	jobs: [],
+	// 记录每个任务上一轮的状态，用于「完成/失败」只提示一次。
+	// 之前漏了这个字段，pollJobs 里 state.statuses.get(...) 会直接抛
+	// TypeError（Cannot read properties of undefined (reading 'get')），
+	// 结果整个任务列表渲染被 catch 吞掉 → 界面既不显示进度也不提示完成。
+	statuses: new Map(),
 	expanded: new Set(),
 	pollTimer: null,
+	// 搜索任务：id 用于轮询，timer 用于串行续查（声明出来便于排查）
+	searchTaskId: null,
+	searchTimer: null,
 	busy: false
 };
 
@@ -112,6 +120,34 @@ async function init() {
 	$('#cleanup').checked = localStorage.getItem('zj-dl-cleanup') === '1';
 
 	pollJobs(true);
+
+	// 启动即载入内置漫画源：下载器自带一份，打开就能搜索，
+	// 不必再去别处找书源 JSON 粘贴（这是之前「看不到搜索下载」的根因）
+	loadBuiltinSources({ silent: true });
+}
+
+/** 加载下载器自带的内置漫画源 */
+async function loadBuiltinSources({ silent = false } = {}) {
+	const btn = $('#load-builtin');
+	if (btn) setBusy(btn, true, '加载中…');
+	try {
+		const data = await api('/api/sources/builtin');
+		const list = data.sources || [];
+		if (!list.length) throw new Error('内置源为空');
+		state.sources = list;
+		state.source = list.find((s) => s.kind === 'comic') || list[0];
+		clearResults();
+		renderSourceInfo();
+		if (!silent) toast(`已加载 ${list.length} 个内置漫画源`, 'ok');
+		// 静默加载时也给个可见反馈，避免用户以为没反应
+		else $('#search-status').textContent = `已载入 ${list.length} 个内置漫画源，输入书名即可搜索`;
+		$('#keyword').focus();
+	} catch (e) {
+		if (!silent) toast(e.message, 'error');
+		else $('#search-status').textContent = '内置源加载失败：' + e.message;
+	} finally {
+		if (btn) setBusy(btn, false, '加载内置源');
+	}
 }
 
 function bindTabs() {
@@ -126,6 +162,8 @@ function bindTabs() {
 
 function bindActions() {
 	$('#load-source').addEventListener('click', loadSource);
+	const builtinBtn = $('#load-builtin');
+	if (builtinBtn) builtinBtn.addEventListener('click', () => loadBuiltinSources());
 	$('#search').addEventListener('click', search);
 	$('#scan').addEventListener('click', scanUrl);
 	$('#start').addEventListener('click', startDownload);
@@ -628,6 +666,7 @@ async function pollJobs(immediate = false) {
 	try {
 		const data = await api('/api/jobs');
 		state.jobs = data.jobs || [];
+		if (!(state.statuses instanceof Map)) state.statuses = new Map();
 		// 状态变化提示：完成 / 失败时不用一直盯着进度条
 		for (const job of state.jobs) {
 			const prev = state.statuses.get(job.id);
@@ -639,7 +678,13 @@ async function pollJobs(immediate = false) {
 		}
 		renderJobs();
 	} catch (e) {
+		// 注意：这里不能用一条吞掉所有异常的 catch —— 之前 state.statuses 未初始化
+		// 导致每轮都抛 TypeError，却被静默吞下，表现为「界面没有进度、完成也不提示」。
+		// 现在把原因写进控制台，并在首次/手动刷新时提示用户。
+		console.error('[jobs] 轮询失败', e);
 		if (immediate) toast(`读取任务失败：${e.message}`, 'error');
+		const status = document.getElementById('jobs-status');
+		if (status) status.textContent = '任务列表刷新失败：' + e.message;
 	}
 	const active = state.jobs.some((j) => j.status === 'running' || j.status === 'queued');
 	state.pollTimer = setTimeout(() => pollJobs(), active ? 700 : 2500);

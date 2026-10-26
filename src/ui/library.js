@@ -51,11 +51,13 @@ export async function renderLibrary(container, app) {
 		</div>
 	`;
 
-	// 导入本地书（TXT / EPUB / 漫画 CBZ）
+	// 导入本地书（TXT / EPUB / 漫画 CBZ / 漫画 ZIP）
+	// .zip 是刻意放开的：第三方下载工具（如 work_crawler）默认把每一话打成 zip，
+	// 而 zip 里就是按顺序排好的图片，和 cbz 结构一致，直接当漫画导入即可。
 	const fileInput = document.createElement('input');
 	fileInput.type = 'file';
 	fileInput.multiple = true;
-	fileInput.accept = '.txt,.text,.epub,.cbz';
+	fileInput.accept = '.txt,.text,.epub,.cbz,.zip';
 	fileInput.style.display = 'none';
 	container.appendChild(fileInput);
 	container.querySelector('#import-btn').addEventListener('click', () => fileInput.click());

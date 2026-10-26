@@ -63,7 +63,8 @@ export async function renderLocal(container, app) {
 	const input = document.createElement('input');
 	input.type = 'file';
 	input.multiple = true;
-	input.accept = '.txt,.text,.epub,.cbz';
+	// .zip 一并支持：第三方下载工具（work_crawler 等）默认按「一话一个 zip」产出
+	input.accept = '.txt,.text,.epub,.cbz,.zip';
 	input.style.display = 'none';
 	container.appendChild(input);
 	container.querySelector('#local-import').addEventListener('click', () => input.click());

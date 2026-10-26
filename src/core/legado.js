@@ -169,7 +169,23 @@ export function parseNavSegment(raw) {
 			s = s.slice(0, -idxM[0].length);
 		}
 		// 带前缀的默认导航
-		if (s.startsWith('class.')) { seg.kind = 'class'; seg.name = s.slice(6); }
+		//
+		// ⚠️ class. 后面可能跟**多个 class**（如
+		//   class.comics-card pure-u-1-2 pure-u-md-1-4）
+		// 这是 legado 里很常见的写法：整体是一个 CSS 选择器。
+		// 早先直接 s.slice(6) 当成了单个 class 名 → querySelectorAll('.a b c')
+		// 找不到任何元素 → 表现为「搜到书但目录 0 话 / 结果为空」。
+		// 这里把空格分隔的多个 class 转成合法的复合选择器 .a.b.c。
+		if (s.startsWith('class.')) {
+			const names = s.slice(6).trim().split(/\s+/).filter(Boolean);
+			if (names.length > 1) {
+				seg.kind = 'css';
+				seg.name = names.map((n) => '.' + n).join('');
+			} else {
+				seg.kind = 'class';
+				seg.name = names[0] || '';
+			}
+		}
 		else if (s.startsWith('tag.')) { seg.kind = 'tag'; seg.name = s.slice(4); }
 		else if (s.startsWith('id.')) { seg.kind = 'id'; seg.name = s.slice(3); }
 		else if (s.startsWith('text.')) { seg.kind = 'text'; seg.name = s.slice(5); }
@@ -177,6 +193,29 @@ export function parseNavSegment(raw) {
 	}
 
 	return seg;
+}
+
+/**
+ * 在一组「从文档根查出的候选元素」里，找出与 root 对应的那一个。
+ * 不比较对象同一性（同一 DOM 两次查询会得到不同包装对象），
+ * 而是比较：先看文本内容与类名是否一致，再退化为按文档中出现顺序对齐。
+ */
+function pickRowAligned(candidates, root, doc) {
+	if (!root || root.nodeType !== 1) return null;
+	const rootKey = (root.className || '') + '|' + (root.textContent || '').trim().slice(0, 60);
+	const same = candidates.filter((el) => {
+		const key = (el.className || '') + '|' + (el.textContent || '').trim().slice(0, 60);
+		return key === rootKey;
+	});
+	if (same.length === 1) return same[0];
+	if (same.length > 1) {
+		// 同书名的多行：按「该行在文档中的序号」对齐
+		const allRows = [...doc.querySelectorAll('.' + cssEscape(String(root.className || '').split(/\s+/)[0]))];
+		const idx = allRows.findIndex((el) => el === root
+			|| (el.textContent || '') === (root.textContent || ''));
+		return idx >= 0 && same[idx] ? same[idx] : same[0];
+	}
+	return null;
 }
 
 /** 在元素集合上执行一段导航 → 新元素集合 */
@@ -367,12 +406,40 @@ export function extractLegado(root, ruleStr, ctx = {}) {
 
 	// 导航
 	let elements = [root];
+	let broken = false;
 	for (const seg of parsed.nav) {
-		elements = navigate(elements, seg, doc);
-		if (!elements.length) {
-			// 导航中断：若还有 js 需要元素，返回空
+		const next = navigate(elements, seg, doc);
+		if (!next.length) { broken = true; break; }
+		elements = next;
+	}
+
+	// 兜底：不少书源把 bookUrl/coverUrl 写成了**与 bookList 相同的绝对选择器**
+	// （例如 bookList 与 bookUrl 都以 class.comics-card... 开头）。
+	// 这时 root 已经是那一行，再在行内找 .comics-card 必然 0 命中。
+	// legado 的语义是按文档根查，所以这里用「行内找不到、且不是从根开始」时
+	// 从 root 所属文档重跑一遍导航。
+	if (broken && root && root.nodeType === 1 && doc && doc.querySelectorAll) {
+		// 关键：必须在**第一段**就把范围收敛到「当前行」，
+		// 不能一路跑完整条 nav —— 因为后续段（如 tag.a）展开后
+		// 文档级命中是「所有行里的所有 a」（12 个），再也对不回是哪一行。
+		const first = navigate([doc], parsed.nav[0], doc);
+		const picked = first.length ? pickRowAligned(first, root, doc) : null;
+		let ok = false;
+		if (picked) {
+			let cur = [picked];
+			ok = true;
+			for (const seg of parsed.nav.slice(1)) {
+				const next = navigate(cur, seg, doc);
+				if (!next.length) { ok = false; break; }
+				cur = next;
+			}
+			if (ok) elements = cur;
+		}
+		if (!ok) {
 			return parsed.jsCode ? runLegadoJs(null, parsed.jsCode, ctx) : '';
 		}
+	} else if (broken) {
+		return parsed.jsCode ? runLegadoJs(null, parsed.jsCode, ctx) : '';
 	}
 
 	// 提取
